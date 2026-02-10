@@ -1,0 +1,10 @@
+# Infrastructure ports (shared resources)
+# Each entry maps a resource name to its host port.
+# These are the ONLY source of truth — never hardcode ports elsewhere.
+sql_server: 1433
+kafka: 9092
+zookeeper: 2181
+mongodb: 27017
+redis: 6379
+rabbitmq: 5672
+rabbitmq_management: 15672

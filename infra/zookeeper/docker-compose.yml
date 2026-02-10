@@ -1,0 +1,35 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: infra-zookeeper
+    ports:
+      - "${PORT}:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - infra-zookeeper-data:/var/lib/zookeeper/data
+      - infra-zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: zookeeper
+    healthcheck:
+      test: echo ruok | nc localhost 2181 | grep imok
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  infra-zookeeper-data:
+    name: infra-zookeeper-data
+  infra-zookeeper-log:
+    name: infra-zookeeper-log
+
+networks:
+  df-network:
+    name: df-network
+    external: true

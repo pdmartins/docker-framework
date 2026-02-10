@@ -1,0 +1,30 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: infra-redis
+    ports:
+      - "${PORT}:6379"
+    command: redis-server --requirepass "${PASSWORD}"
+    volumes:
+      - infra-redis-data:/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: redis
+    healthcheck:
+      test: redis-cli -a "$${PASSWORD}" ping | grep PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  infra-redis-data:
+    name: infra-redis-data
+
+networks:
+  df-network:
+    name: df-network
+    external: true

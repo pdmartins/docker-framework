@@ -1,0 +1,32 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: infra-mongodb
+    ports:
+      - "${PORT}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${ROOT_USER}"
+      MONGO_INITDB_ROOT_PASSWORD: "${ROOT_PASSWORD}"
+    volumes:
+      - infra-mongodb-data:/data/db
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: mongodb
+    healthcheck:
+      test: mongosh --eval "db.adminCommand('ping')" --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  infra-mongodb-data:
+    name: infra-mongodb-data
+
+networks:
+  df-network:
+    name: df-network
+    external: true

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# docker-framework CLI entrypoint
+# Usage: df <command> [options]
+
+# Resolve the root directory of the framework
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly LIB_DIR="${ROOT_DIR}/lib"
+readonly INFRA_DIR="${ROOT_DIR}/infra"
+readonly INFRA_CONFIG_DIR="${INFRA_DIR}/.config"
+
+export ROOT_DIR LIB_DIR INFRA_DIR INFRA_CONFIG_DIR
+
+# Source core libraries
+source "${LIB_DIR}/core.sh"
+source "${LIB_DIR}/config.sh"
+source "${LIB_DIR}/deps.sh"
+source "${LIB_DIR}/infra.sh"
+source "${LIB_DIR}/init.sh"
+
+# Source commands
+source "${LIB_DIR}/commands/start.sh"
+source "${LIB_DIR}/commands/stop.sh"
+source "${LIB_DIR}/commands/restart.sh"
+source "${LIB_DIR}/commands/status.sh"
+source "${LIB_DIR}/commands/reset.sh"
+source "${LIB_DIR}/commands/log.sh"
+
+# Shows usage information and available commands.
+show_usage() {
+  cat <<EOF
+Usage: df <command> [options]
+
+Docker Framework CLI — orchestrates Docker multi-project environments.
+
+Commands:
+  start      Start infrastructure dependencies and project
+  stop       Stop project (and unused infra)
+  restart    Restart project and dependencies
+  status     Show status of all managed containers
+  reset      Reset project data, re-init, and restart
+  log        Show logs for project or specific resource
+
+Options:
+  -h, --help     Show this help message
+  -v, --version  Show version
+
+Run 'df <command> --help' for more information on a command.
+EOF
+}
+
+# Shows the current version of the framework.
+show_version() {
+  echo "docker-framework v0.1.0"
+}
+
+# Main entry point — dispatches to the appropriate command.
+main() {
+  if [[ $# -eq 0 ]]; then
+    show_usage
+    exit 0
+  fi
+
+  local command="${1}"
+  shift
+
+  case "${command}" in
+    start)      cmd_start "$@" ;;
+    stop)       cmd_stop "$@" ;;
+    restart)    cmd_restart "$@" ;;
+    status)     cmd_status "$@" ;;
+    reset)      cmd_reset "$@" ;;
+    log)        cmd_log "$@" ;;
+    -h|--help)  show_usage ;;
+    -v|--version) show_version ;;
+    *)
+      log_error "Unknown command: ${command}"
+      show_usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

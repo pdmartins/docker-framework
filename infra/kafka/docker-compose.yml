@@ -1,0 +1,39 @@
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: infra-kafka
+    ports:
+      - "${PORT}:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: infra-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://infra-kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - infra-kafka-data:/var/lib/kafka/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: kafka
+    healthcheck:
+      test: kafka-broker-api-versions --bootstrap-server localhost:9092
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      infra-zookeeper:
+        condition: service_healthy
+
+volumes:
+  infra-kafka-data:
+    name: infra-kafka-data
+
+networks:
+  df-network:
+    name: df-network
+    external: true
