@@ -1,0 +1,30 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: infra-${PROJECT_SLUG}-rabbitmq
+    ports:
+      - "${HOST_PORT_RABBITMQ}:5672"
+      - "${HOST_PORT_RABBITMQ_MGMT}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - ${PROJECT_DATA_PATH}/rabbitmq:/var/lib/rabbitmq
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: rabbitmq
+      df.project: ${PROJECT_SLUG}
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  df-network:
+    name: df-network
+    external: true

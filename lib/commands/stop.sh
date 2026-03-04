@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 # Command: df stop
-# Description: Stop the project and optionally unused infrastructure
+# Description: Stop the project services and infra (not platform)
 
-# shellcheck source=../core.sh
-source "${LIB_DIR}/core.sh"
-# shellcheck source=../config.sh
-source "${LIB_DIR}/config.sh"
-# shellcheck source=../deps.sh
-source "${LIB_DIR}/deps.sh"
-# shellcheck source=../infra.sh
-source "${LIB_DIR}/infra.sh"
-
-# Stops the project and optionally unused infrastructure.
-# Flow:
-#   1. Stop the project container
-#   2. Check each infra dependency
-#   3. Stop infra if no other project depends on it (with --with-infra)
-# Args: $@ - options (--with-infra to also stop unused infra)
+# Stops project services and infrastructure. Does NOT stop platform services.
+# Args: $@ - options
 cmd_stop() {
-  local with_infra=false
-
   while [[ $# -gt 0 ]]; do
     case "${1}" in
-      --with-infra)  with_infra=true; shift ;;
       -h|--help)     _stop_usage; return 0 ;;
       *)             log_error "Unknown option: ${1}"; return 1 ;;
     esac
@@ -33,37 +17,34 @@ cmd_stop() {
   local df_yml
   df_yml="$(find_df_yml)"
 
-  local app_name
-  app_name="$(get_app_name "${df_yml}")"
+  resolve_project_metadata "${df_yml}"
 
-  # Stop the project
-  log_info "Stopping ${app_name}..."
+  log_info "Stopping ${PROJECT_SLUG}..."
+
+  # Stop project services
+  local service_deps
+  service_deps="$(resolve_service_deps "${df_yml}")"
+
   local app_dir
   app_dir="$(dirname "${df_yml}")"
 
-  if is_container_running "${app_name}"; then
-    (cd "${app_dir}" && docker compose down 2>&1)
-    log_success "${app_name} stopped"
-  else
-    log_info "${app_name} is not running"
-  fi
+  while IFS= read -r svc; do
+    [[ -z "${svc}" ]] && continue
+    local svc_dir="${app_dir}/${svc}"
 
-  # Optionally stop unused infra
-  if [[ "${with_infra}" == true ]]; then
-    echo ""
-    log_info "Checking infrastructure dependencies..."
+    if [[ -f "${svc_dir}/docker-compose.yml" ]]; then
+      log_info "Stopping service: ${svc}..."
+      docker compose -f "${svc_dir}/docker-compose.yml" \
+        --project-name "${PROJECT_SLUG}" down 2>&1
+      log_success "${svc} stopped"
+    fi
+  done <<< "${service_deps}"
 
-    local deps
-    deps="$(resolve_deps "${df_yml}")"
-
-    while IFS= read -r dep; do
-      [[ -z "${dep}" ]] && continue
-      stop_infra_if_unused "${dep}" "${app_name}"
-    done <<< "${deps}"
-  fi
+  # Stop infra dependencies
+  stop_all_deps "${df_yml}"
 
   echo ""
-  log_success "Done"
+  log_success "Done (platform services left running)"
 }
 
 # Shows usage for the stop command.
@@ -71,10 +52,10 @@ _stop_usage() {
   cat <<EOF
 Usage: df stop [options]
 
-Stop the project application.
+Stop project services and infrastructure dependencies.
+Platform services (shared) are NOT stopped.
 
 Options:
-  --with-infra   Also stop infrastructure resources not used by other projects
   -h, --help     Show this help message
 EOF
 }

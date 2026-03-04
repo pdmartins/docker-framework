@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
-# Configuration management: reads ports and credentials from YAML files.
-# Infra config: ${INFRA_CONFIG_DIR}/ports.yml, credentials.yml
-# Project config: ${ROOT_DIR}/{project}/config/ports.yml, credentials.yml
+# Configuration management: port calculation, env generation, squads registry.
 # Requires: yq
+
+# --- Known service ports (NNN suffix) ---
+# Max 5 squads (X=1..5), 9 projects per squad (Y=1..9)
+# Host port formula: XY * 1000 + NNN
+
+declare -A SERVICE_PORTS
+SERVICE_PORTS=(
+  [postgresql]=432
+  [kafka]=92
+  [zookeeper]=181
+  [redis]=379
+  [rabbitmq]=672
+  [rabbitmq_mgmt]=673
+)
+
+# --- YAML helpers ---
 
 # Reads a value from a YAML file using yq.
 # Args: $1 - file path, $2 - yq expression
@@ -19,252 +33,234 @@ read_yaml() {
   yq "${expression}" "${file}"
 }
 
-# --- Infra config (shared) ---
-
-# Gets the port for an infrastructure resource from infra/.config/ports.yml.
-# Args: $1 - resource name (e.g., sql_server, kafka)
-# Returns: port number (stdout)
-get_port() {
-  local resource="${1}"
-  local port
-  port="$(read_yaml "${INFRA_CONFIG_DIR}/ports.yml" ".${resource}")"
-
-  if [[ -z "${port}" || "${port}" == "null" ]]; then
-    log_error "Port not configured for resource: ${resource} in infra/.config/ports.yml"
-    return 1
-  fi
-
-  echo "${port}"
-}
-
-# Gets a credential value for a resource from infra/.config/credentials.yml.
-# Args: $1 - resource name, $2 - credential key
-# Returns: credential value (stdout)
-get_credential() {
-  local resource="${1}"
-  local key="${2}"
-  local value
-  value="$(read_yaml "${INFRA_CONFIG_DIR}/credentials.yml" ".${resource}.${key}")"
-
-  if [[ -z "${value}" || "${value}" == "null" ]]; then
-    log_error "Credential '${key}' not configured for resource: ${resource} in infra/.config/credentials.yml"
-    return 1
-  fi
-
-  echo "${value}"
-}
-
-# Gets all credentials for a resource as KEY=VALUE pairs.
-# Args: $1 - resource name
-# Returns: KEY=VALUE pairs (stdout, one per line)
-get_all_credentials() {
-  local resource="${1}"
-  local creds_file="${INFRA_CONFIG_DIR}/credentials.yml"
-
-  if [[ ! -f "${creds_file}" ]]; then
-    return 0
-  fi
-
-  yq ".${resource} // {} | to_entries | .[] | .key + \"=\" + (.value | tostring)" "${creds_file}" 2>/dev/null || true
-}
-
-# --- Project config ---
-
-# Gets the port for a project application from {project}/config/ports.yml.
-# Args: $1 - app name, $2 - project name
-# Returns: port number (stdout)
-get_project_port() {
-  local app_name="${1}"
-  local project_name="${2:-}"
-
-  # If project_name not given, try to resolve from current directory
-  if [[ -z "${project_name}" ]]; then
-    if [[ -f "df.yml" ]]; then
-      project_name="$(read_yaml "df.yml" '.project')"
-    fi
-  fi
-
-  if [[ -z "${project_name}" ]]; then
-    log_error "Cannot determine project name for port lookup"
-    return 1
-  fi
-
-  local config_file="${ROOT_DIR}/${project_name}/config/ports.yml"
-  local port
-  port="$(read_yaml "${config_file}" ".${app_name}")"
-
-  if [[ -z "${port}" || "${port}" == "null" ]]; then
-    log_error "Port not configured for app: ${app_name} in ${project_name}/config/ports.yml"
-    return 1
-  fi
-
-  echo "${port}"
-}
-
-# Gets a project-level credential.
-# Args: $1 - key path (yq expression), $2 - project name
-# Returns: value (stdout)
-get_project_credential() {
-  local key="${1}"
-  local project_name="${2}"
-  local config_file="${ROOT_DIR}/${project_name}/config/credentials.yml"
-
-  if [[ ! -f "${config_file}" ]]; then
-    return 0
-  fi
-
-  read_yaml "${config_file}" "${key}"
-}
-
 # --- df.yml helpers ---
 
-# Reads the app name from a df.yml file.
+# Reads the project slug from df.yml.
 # Args: $1 - path to df.yml
-# Returns: app name (stdout)
-get_app_name() {
+# Returns: slug (stdout)
+get_project_slug() {
   local df_yml="${1}"
-  read_yaml "${df_yml}" '.name'
+  read_yaml "${df_yml}" '.project.name'
 }
 
-# Reads the project name from a df.yml file.
+# Reads the squad slug from df.yml.
 # Args: $1 - path to df.yml
-# Returns: project name (stdout)
-get_project_name() {
+# Returns: slug (stdout)
+get_squad_slug() {
   local df_yml="${1}"
-  read_yaml "${df_yml}" '.project'
+  read_yaml "${df_yml}" '.project.squad'
+}
+
+# Reads the project index from df.yml.
+# Args: $1 - path to df.yml
+# Returns: index (stdout)
+get_project_index() {
+  local df_yml="${1}"
+  read_yaml "${df_yml}" '.project.index'
+}
+
+# --- Squads registry ---
+
+# Looks up squad index from squads.yml by slug.
+# Args: $1 - squad slug
+# Returns: squad index (stdout)
+get_squad_index() {
+  local squad_slug="${1}"
+  local squads_file="${CONFIG_DIR}/squads.yml"
+  local index
+  index="$(read_yaml "${squads_file}" ".squads[] | select(.slug == \"${squad_slug}\") | .index")"
+
+  if [[ -z "${index}" || "${index}" == "null" ]]; then
+    log_error "Squad not found in squads.yml: ${squad_slug}"
+    return 1
+  fi
+
+  echo "${index}"
+}
+
+# Looks up project index from squads.yml by squad slug + project slug.
+# Args: $1 - squad slug, $2 - project slug
+# Returns: project index (stdout)
+lookup_project_index() {
+  local squad_slug="${1}"
+  local project_slug="${2}"
+  local squads_file="${CONFIG_DIR}/squads.yml"
+  local index
+  index="$(read_yaml "${squads_file}" ".squads[] | select(.slug == \"${squad_slug}\") | .projects[] | select(.slug == \"${project_slug}\") | .index")"
+
+  if [[ -z "${index}" || "${index}" == "null" ]]; then
+    log_error "Project not found in squads.yml: ${squad_slug}/${project_slug}"
+    return 1
+  fi
+
+  echo "${index}"
+}
+
+# --- Port calculation ---
+
+# Calculates the port prefix (XY) for a project.
+# Args: $1 - squad index, $2 - project index
+# Returns: prefix number (stdout)
+calculate_port_prefix() {
+  local squad_index="${1}"
+  local project_index="${2}"
+  echo $(( squad_index * 10 + project_index ))
+}
+
+# Calculates all host ports for a project.
+# Args: $1 - squad index, $2 - project index
+# Returns: KEY=VALUE pairs (stdout, one per line)
+calculate_ports() {
+  local squad_index="${1}"
+  local project_index="${2}"
+  local prefix
+  prefix="$(calculate_port_prefix "${squad_index}" "${project_index}")"
+
+  local service
+  for service in "${!SERVICE_PORTS[@]}"; do
+    local nnn="${SERVICE_PORTS[${service}]}"
+    local host_port=$(( prefix * 1000 + 10#${nnn} ))
+    local upper_service
+    upper_service="$(echo "${service}" | tr '[:lower:]' '[:upper:]')"
+    echo "HOST_PORT_${upper_service}=${host_port}"
+  done | sort
+}
+
+# Gets a specific host port for a service.
+# Args: $1 - service name, $2 - squad index, $3 - project index
+# Returns: port number (stdout)
+get_host_port() {
+  local service="${1}"
+  local squad_index="${2}"
+  local project_index="${3}"
+
+  local nnn="${SERVICE_PORTS[${service}]}"
+  if [[ -z "${nnn}" ]]; then
+    log_error "Unknown service for port calculation: ${service}"
+    return 1
+  fi
+
+  local prefix
+  prefix="$(calculate_port_prefix "${squad_index}" "${project_index}")"
+  echo $(( prefix * 1000 + 10#${nnn} ))
 }
 
 # --- .env generation ---
 
-# Generates a .env file for an infra resource from config YAMLs.
-# The docker-compose reads from this .env — no defaults in compose files.
-# Args: $1 - resource name
+# Generates a temporary .env file for a template compose.
+# Args: $1 - project slug, $2 - project data path, $3 - squad index, $4 - project index
 # Returns: path to generated .env (stdout)
 generate_infra_env() {
-  local resource="${1}"
-  local env_file="${INFRA_DIR}/${resource}/.env"
+  local project_slug="${1}"
+  local project_data_path="${2}"
+  local squad_index="${3}"
+  local project_index="${4}"
 
-  # Start fresh
-  : > "${env_file}"
+  local env_file
+  env_file="$(mktemp "${TMPDIR:-/tmp}/df-env-${project_slug}-XXXXXX")"
 
-  # Add port
-  local port
-  port="$(get_port "${resource}")" || return 1
-  echo "PORT=${port}" >> "${env_file}"
+  echo "PROJECT_SLUG=${project_slug}" >> "${env_file}"
+  echo "PROJECT_DATA_PATH=${project_data_path}" >> "${env_file}"
 
-  # Add credentials
-  local creds
-  creds="$(get_all_credentials "${resource}")"
-  while IFS= read -r cred_line; do
-    [[ -z "${cred_line}" ]] && continue
-    local key val
-    key="$(echo "${cred_line}" | cut -d= -f1 | tr '[:lower:]' '[:upper:]')"
-    val="$(echo "${cred_line}" | cut -d= -f2-)"
-    echo "${key}=${val}" >> "${env_file}"
-  done <<< "${creds}"
+  # Add all host ports
+  calculate_ports "${squad_index}" "${project_index}" >> "${env_file}"
 
   echo "${env_file}"
 }
 
-# Generates a .env file for a project application from config YAMLs.
-# Merges infra ports/credentials (for dependencies) + project port.
+# Resolves project metadata from df.yml and squads.yml.
+# Sets global variables: PROJECT_SLUG, SQUAD_SLUG, SQUAD_INDEX, PROJECT_INDEX, PROJECT_DATA_PATH
 # Args: $1 - path to df.yml
-# Returns: path to generated .env (stdout)
-generate_project_env() {
+resolve_project_metadata() {
   local df_yml="${1}"
-  local app_dir
-  app_dir="$(dirname "${df_yml}")"
-  local env_file="${app_dir}/.env"
 
-  local app_name
-  app_name="$(get_app_name "${df_yml}")"
+  PROJECT_SLUG="$(get_project_slug "${df_yml}")"
+  SQUAD_SLUG="$(get_squad_slug "${df_yml}")"
 
-  local project_name
-  project_name="$(get_project_name "${df_yml}")"
+  # Try df.yml index first, fall back to squads.yml lookup
+  PROJECT_INDEX="$(get_project_index "${df_yml}")"
+  SQUAD_INDEX="$(get_squad_index "${SQUAD_SLUG}")"
 
-  # Start fresh
-  : > "${env_file}"
-
-  # Add project app port
-  local app_port
-  app_port="$(get_project_port "${app_name}" "${project_name}")" || return 1
-  echo "APP_PORT=${app_port}" >> "${env_file}"
-
-  # Add infra ports and credentials for each dependency
-  local deps
-  deps="$(read_yaml "${df_yml}" '.dependencies[]' 2>/dev/null || true)"
-
-  while IFS= read -r dep; do
-    [[ -z "${dep}" ]] && continue
-
-    local upper_dep
-    upper_dep="$(echo "${dep}" | tr '[:lower:]' '[:upper:]')"
-
-    # Port
-    local port
-    port="$(get_port "${dep}")" || continue
-    echo "${upper_dep}_PORT=${port}" >> "${env_file}"
-
-    # Credentials
-    local creds
-    creds="$(get_all_credentials "${dep}")"
-    while IFS= read -r cred_line; do
-      [[ -z "${cred_line}" ]] && continue
-      local key val
-      key="$(echo "${cred_line}" | cut -d= -f1)"
-      val="$(echo "${cred_line}" | cut -d= -f2-)"
-      local upper_key
-      upper_key="$(echo "${upper_dep}_${key}" | tr '[:lower:]' '[:upper:]')"
-      echo "${upper_key}=${val}" >> "${env_file}"
-    done <<< "${creds}"
-  done <<< "${deps}"
-
-  echo "${env_file}"
+  # Data path: parent directory of where df.yml lives + /data
+  local project_dir
+  project_dir="$(cd "$(dirname "${df_yml}")" && pwd)"
+  PROJECT_DATA_PATH="${project_dir}/data"
 }
 
-# Builds environment variables for an app based on its dependencies.
-# Injects ports and credentials from config files.
-# Args: $1 - path to df.yml
-# Returns: env vars as -e flags (stdout)
-build_env_vars() {
-  local df_yml="${1}"
-  local env_flags=""
+# --- Ports documentation ---
 
-  local app_name
-  app_name="$(get_app_name "${df_yml}")"
+# Generates PORTS.md from squads.yml with all calculated ports.
+generate_ports_doc() {
+  local squads_file="${CONFIG_DIR}/squads.yml"
+  local output_file="${ROOT_DIR}/PORTS.md"
 
-  local project_name
-  project_name="$(get_project_name "${df_yml}")"
+  if [[ ! -f "${squads_file}" ]]; then
+    log_error "squads.yml not found: ${squads_file}"
+    return 1
+  fi
 
-  local app_port
-  app_port="$(get_project_port "${app_name}" "${project_name}")" || return 1
-  env_flags="${env_flags} -e APP_PORT=${app_port}"
+  {
+    echo "# Port Assignments"
+    echo ""
+    echo "> Auto-generated by \`df\`. Do not edit manually."
+    echo ""
+    echo "## Schema"
+    echo ""
+    echo "Host port format: \`XYNNN\`"
+    echo ""
+    echo "- \`X\` = squad index"
+    echo "- \`Y\` = project index within squad"
+    echo "- \`NNN\` = last 3 digits of service default port"
+    echo ""
+    echo "| Service | Default Port | NNN |"
+    echo "|---------|-------------|-----|"
+    echo "| PostgreSQL | 5432 | 432 |"
+    echo "| Kafka | 9092 | 092 |"
+    echo "| Zookeeper | 2181 | 181 |"
+    echo "| Redis | 6379 | 379 |"
+    echo "| RabbitMQ | 5672 | 672 |"
+    echo "| RabbitMQ Management | 15672 | 673 |"
+    echo ""
+    echo "## Assignments"
+    echo ""
+    echo "| Squad | Project | Prefix | PostgreSQL | Kafka | Zookeeper | Redis | RabbitMQ | RabbitMQ Mgmt |"
+    echo "|-------|---------|--------|------------|-------|-----------|-------|----------|---------------|"
 
-  local deps
-  deps="$(read_yaml "${df_yml}" '.dependencies[]' 2>/dev/null || true)"
+    local squad_count
+    squad_count="$(read_yaml "${squads_file}" '.squads | length')"
 
-  while IFS= read -r dep; do
-    [[ -z "${dep}" ]] && continue
+    local i=0
+    while [[ "${i}" -lt "${squad_count}" ]]; do
+      local squad_slug squad_index
+      squad_slug="$(read_yaml "${squads_file}" ".squads[${i}].slug")"
+      squad_index="$(read_yaml "${squads_file}" ".squads[${i}].index")"
 
-    local port
-    port="$(get_port "${dep}")" || continue
-    local upper_dep
-    upper_dep="$(echo "${dep}" | tr '[:lower:]' '[:upper:]')"
-    env_flags="${env_flags} -e ${upper_dep}_PORT=${port}"
+      local project_count
+      project_count="$(read_yaml "${squads_file}" ".squads[${i}].projects | length")"
 
-    # Add credentials as env vars
-    local creds
-    creds="$(get_all_credentials "${dep}")"
-    while IFS= read -r cred_line; do
-      [[ -z "${cred_line}" ]] && continue
-      local key val
-      key="$(echo "${cred_line}" | cut -d= -f1)"
-      val="$(echo "${cred_line}" | cut -d= -f2-)"
-      local upper_key
-      upper_key="$(echo "${upper_dep}_${key}" | tr '[:lower:]' '[:upper:]')"
-      env_flags="${env_flags} -e ${upper_key}=${val}"
-    done <<< "${creds}"
-  done <<< "${deps}"
+      local j=0
+      while [[ "${j}" -lt "${project_count}" ]]; do
+        local proj_slug proj_index prefix
+        proj_slug="$(read_yaml "${squads_file}" ".squads[${i}].projects[${j}].slug")"
+        proj_index="$(read_yaml "${squads_file}" ".squads[${i}].projects[${j}].index")"
+        prefix="$(calculate_port_prefix "${squad_index}" "${proj_index}")"
 
-  echo "${env_flags}"
+        local pg kafka zk redis rmq rmq_mgmt
+        pg=$(( prefix * 1000 + 10#${SERVICE_PORTS[postgresql]} ))
+        kafka=$(( prefix * 1000 + 10#${SERVICE_PORTS[kafka]} ))
+        zk=$(( prefix * 1000 + 10#${SERVICE_PORTS[zookeeper]} ))
+        redis=$(( prefix * 1000 + 10#${SERVICE_PORTS[redis]} ))
+        rmq=$(( prefix * 1000 + 10#${SERVICE_PORTS[rabbitmq]} ))
+        rmq_mgmt=$(( prefix * 1000 + 10#${SERVICE_PORTS[rabbitmq_mgmt]} ))
+
+        echo "| ${squad_slug} | ${proj_slug} | ${prefix} | ${pg} | ${kafka} | ${zk} | ${redis} | ${rmq} | ${rmq_mgmt} |"
+
+        j=$((j + 1))
+      done
+
+      i=$((i + 1))
+    done
+  } > "${output_file}"
+
+  log_success "PORTS.md generated"
 }

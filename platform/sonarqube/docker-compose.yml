@@ -1,0 +1,38 @@
+services:
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: platform-sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - platform-sonarqube-data:/opt/sonarqube/data
+      - platform-sonarqube-logs:/opt/sonarqube/logs
+      - platform-sonarqube-extensions:/opt/sonarqube/extensions
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: sonarqube
+    healthcheck:
+      test: wget -qO- http://localhost:9000/api/system/status | grep -q '"status":"UP"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  platform-sonarqube-data:
+    name: platform-sonarqube-data
+  platform-sonarqube-logs:
+    name: platform-sonarqube-logs
+  platform-sonarqube-extensions:
+    name: platform-sonarqube-extensions
+
+networks:
+  df-network:
+    name: df-network
+    external: true

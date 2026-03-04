@@ -1,0 +1,29 @@
+services:
+  postgresql:
+    image: postgres:16-alpine
+    container_name: infra-${PROJECT_SLUG}-postgresql
+    ports:
+      - "${HOST_PORT_POSTGRESQL}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ${PROJECT_DATA_PATH}/postgresql:/var/lib/postgresql/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: postgresql
+      df.project: ${PROJECT_SLUG}
+    healthcheck:
+      test: pg_isready -U postgres
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  df-network:
+    name: df-network
+    external: true

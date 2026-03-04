@@ -17,8 +17,11 @@ run_all_init_scripts() {
     return 0
   fi
 
+  # Resolve project metadata for container names
+  resolve_project_metadata "${df_yml}"
+
   local deps
-  deps="$(resolve_deps "${df_yml}")"
+  deps="$(resolve_infra_deps "${df_yml}")"
 
   while IFS= read -r dep; do
     [[ -z "${dep}" ]] && continue
@@ -33,7 +36,7 @@ run_all_init_scripts() {
 
     log_info "Running init script for ${dep}..."
 
-    if ! run_init_script "${dep}" "${init_file}"; then
+    if ! run_init_script "${dep}" "${init_file}" "${PROJECT_SLUG}"; then
       log_error "Init script failed for ${dep}"
       failed=1
     else
@@ -64,26 +67,28 @@ find_init_script() {
 }
 
 # Dispatches init script execution to the appropriate handler.
-# Args: $1 - resource name, $2 - init script path
+# Args: $1 - resource name, $2 - init script path, $3 - project slug
 # Returns: 0 on success, 1 on failure
 run_init_script() {
   local resource="${1}"
   local init_file="${2}"
+  local project_slug="${3}"
   local ext="${init_file##*.}"
+  local container_name="infra-${project_slug}-${resource}"
 
   case "${resource}" in
-    sql_server)   run_init_sql_server "${init_file}" ;;
-    postgresql)   run_init_postgresql "${init_file}" ;;
-    kafka)        run_init_kafka "${init_file}" ;;
-    mongodb)      run_init_mongodb "${init_file}" ;;
-    rabbitmq)     run_init_rabbitmq "${init_file}" ;;
-    redis)        run_init_redis "${init_file}" ;;
+    sql_server)   run_init_sql_server "${init_file}" "${container_name}" ;;
+    postgresql)   run_init_postgresql "${init_file}" "${container_name}" ;;
+    kafka)        run_init_kafka "${init_file}" "${container_name}" ;;
+    mongodb)      run_init_mongodb "${init_file}" "${container_name}" ;;
+    rabbitmq)     run_init_rabbitmq "${init_file}" "${container_name}" ;;
+    redis)        run_init_redis "${init_file}" "${container_name}" ;;
     *)
       # Generic handler based on extension
       case "${ext}" in
-        sql)  run_init_generic_sql "${resource}" "${init_file}" ;;
-        sh)   run_init_generic_sh "${resource}" "${init_file}" ;;
-        js)   run_init_generic_js "${resource}" "${init_file}" ;;
+        sql)  run_init_generic_sql "${container_name}" "${init_file}" ;;
+        sh)   run_init_generic_sh "${container_name}" "${init_file}" ;;
+        js)   run_init_generic_js "${container_name}" "${init_file}" ;;
         *)    log_warn "No init handler for ${resource} (${ext})" ;;
       esac
       ;;
@@ -93,96 +98,89 @@ run_init_script() {
 # --- Resource-specific init executors ---
 
 # Executes SQL Server init script via sqlcmd.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_sql_server() {
   local init_file="${1}"
-  local password
-  password="$(get_credential "sql_server" "sa_password")"
+  local container_name="${2}"
 
-  docker exec -i infra-sql_server /opt/mssql-tools18/bin/sqlcmd \
-    -S localhost -U sa -P "${password}" \
+  docker exec -i "${container_name}" /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost -U sa -P "YourStrong!Passw0rd" \
     -C -i "/dev/stdin" < "${init_file}"
 }
 
 # Executes PostgreSQL init script via psql.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_postgresql() {
   local init_file="${1}"
-  local user
-  user="$(get_credential "postgresql" "user")"
+  local container_name="${2}"
 
-  docker exec -i infra-postgresql psql \
-    -U "${user}" -d postgres \
+  docker exec -i "${container_name}" psql \
+    -U postgres -d postgres \
     < "${init_file}"
 }
 
 # Executes Kafka init script via bash in container.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_kafka() {
   local init_file="${1}"
-  docker exec -i infra-kafka bash < "${init_file}"
+  local container_name="${2}"
+  docker exec -i "${container_name}" bash < "${init_file}"
 }
 
 # Executes MongoDB init script via mongosh.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_mongodb() {
   local init_file="${1}"
-  local user password
-  user="$(get_credential "mongodb" "root_user")"
-  password="$(get_credential "mongodb" "root_password")"
+  local container_name="${2}"
 
-  docker exec -i infra-mongodb mongosh \
-    -u "${user}" -p "${password}" \
+  docker exec -i "${container_name}" mongosh \
+    -u root -p root \
     --authenticationDatabase admin \
     < "${init_file}"
 }
 
 # Executes RabbitMQ init script via bash in container.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_rabbitmq() {
   local init_file="${1}"
-  docker exec -i infra-rabbitmq bash < "${init_file}"
+  local container_name="${2}"
+  docker exec -i "${container_name}" bash < "${init_file}"
 }
 
 # Redis typically doesn't need init scripts.
-# Args: $1 - init script path
+# Args: $1 - init script path, $2 - container name
 run_init_redis() {
   local init_file="${1}"
+  local container_name="${2}"
   log_info "Redis init scripts are typically not needed (databases 0-15 exist by default)"
   if [[ -f "${init_file}" ]]; then
-    local password
-    password="$(get_credential "redis" "password")"
-    local auth_flag=""
-    if [[ -n "${password}" ]]; then
-      auth_flag="-a ${password}"
-    fi
-    docker exec -i infra-redis redis-cli ${auth_flag} < "${init_file}"
+    docker exec -i "${container_name}" redis-cli < "${init_file}"
   fi
 }
 
 # --- Generic init executors ---
 
 # Executes a generic SQL init script.
-# Args: $1 - resource name, $2 - init file path
+# Args: $1 - container name, $2 - init file path
 run_init_generic_sql() {
-  local resource="${1}"
+  local container_name="${1}"
   local init_file="${2}"
-  log_warn "Using generic SQL executor for ${resource} — consider adding a specific handler"
-  docker exec -i "infra-${resource}" sh -c 'cat > /tmp/init.sql && echo "Init script copied"' < "${init_file}"
+  log_warn "Using generic SQL executor for ${container_name} — consider adding a specific handler"
+  docker exec -i "${container_name}" sh -c 'cat > /tmp/init.sql && echo "Init script copied"' < "${init_file}"
 }
 
 # Executes a generic shell init script.
-# Args: $1 - resource name, $2 - init file path
+# Args: $1 - container name, $2 - init file path
 run_init_generic_sh() {
-  local resource="${1}"
+  local container_name="${1}"
   local init_file="${2}"
-  docker exec -i "infra-${resource}" bash < "${init_file}"
+  docker exec -i "${container_name}" bash < "${init_file}"
 }
 
 # Executes a generic JavaScript init script.
-# Args: $1 - resource name, $2 - init file path
+# Args: $1 - container name, $2 - init file path
 run_init_generic_js() {
-  local resource="${1}"
+  local container_name="${1}"
   local init_file="${2}"
-  docker exec -i "infra-${resource}" node < "${init_file}"
+  docker exec -i "${container_name}" node < "${init_file}"
 }

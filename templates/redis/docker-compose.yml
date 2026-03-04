@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: infra-${PROJECT_SLUG}-redis
+    ports:
+      - "${HOST_PORT_REDIS}:6379"
+    volumes:
+      - ${PROJECT_DATA_PATH}/redis:/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: infra
+      df.resource: redis
+      df.project: ${PROJECT_SLUG}
+    healthcheck:
+      test: redis-cli ping | grep PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  df-network:
+    name: df-network
+    external: true

@@ -2,9 +2,6 @@
 # Command: df status
 # Description: Show status of all managed containers
 
-# shellcheck source=../core.sh
-source "${LIB_DIR}/core.sh"
-
 # Shows the status of all containers managed by docker-framework.
 # Can be run from any directory.
 # Args: $@ - options
@@ -19,16 +16,37 @@ cmd_status() {
   log_info "Docker Framework — Container Status"
   echo ""
 
+  # Platform containers
+  echo "Platform:"
+  printf "  %-30s %-15s %s\n" "NAME" "STATUS" "PORTS"
+  printf "  %-30s %-15s %s\n" "----" "------" "-----"
+
+  local platform_found=false
+  while IFS=$'\t' read -r name status ports; do
+    [[ -z "${name}" ]] && continue
+    platform_found=true
+    printf "  %-30s %-15s %s\n" "${name}" "${status}" "${ports}"
+  done < <(docker ps -a \
+    --filter "label=managed-by=docker-framework" \
+    --filter "label=df.type=platform" \
+    --format "{{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || true)
+
+  if [[ "${platform_found}" == false ]]; then
+    echo "  (no platform containers)"
+  fi
+
+  echo ""
+
   # Infrastructure containers
   echo "Infrastructure:"
-  printf "  %-25s %-15s %s\n" "NAME" "STATUS" "PORTS"
-  printf "  %-25s %-15s %s\n" "----" "------" "-----"
+  printf "  %-30s %-15s %s\n" "NAME" "STATUS" "PORTS"
+  printf "  %-30s %-15s %s\n" "----" "------" "-----"
 
   local infra_found=false
   while IFS=$'\t' read -r name status ports; do
     [[ -z "${name}" ]] && continue
     infra_found=true
-    printf "  %-25s %-15s %s\n" "${name}" "${status}" "${ports}"
+    printf "  %-30s %-15s %s\n" "${name}" "${status}" "${ports}"
   done < <(docker ps -a \
     --filter "label=managed-by=docker-framework" \
     --filter "label=df.type=infra" \
@@ -42,14 +60,14 @@ cmd_status() {
 
   # Project containers
   echo "Projects:"
-  printf "  %-25s %-15s %s\n" "NAME" "STATUS" "PORTS"
-  printf "  %-25s %-15s %s\n" "----" "------" "-----"
+  printf "  %-30s %-15s %s\n" "NAME" "STATUS" "PORTS"
+  printf "  %-30s %-15s %s\n" "----" "------" "-----"
 
   local projects_found=false
   while IFS=$'\t' read -r name status ports; do
     [[ -z "${name}" ]] && continue
     projects_found=true
-    printf "  %-25s %-15s %s\n" "${name}" "${status}" "${ports}"
+    printf "  %-30s %-15s %s\n" "${name}" "${status}" "${ports}"
   done < <(docker ps -a \
     --filter "label=managed-by=docker-framework" \
     --filter "label=df.type=project" \

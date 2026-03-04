@@ -2,11 +2,8 @@
 # Command: df log
 # Description: Show logs for the project or a specific resource
 
-# shellcheck source=../core.sh
-source "${LIB_DIR}/core.sh"
-
-# Shows logs for the current project or a specific infrastructure resource.
-# Args: $1 - resource name (optional, defaults to current project)
+# Shows logs for a container.
+# Args: $1 - resource name (optional, defaults to showing project help)
 cmd_log() {
   local follow=false
   local tail_lines="100"
@@ -30,28 +27,31 @@ cmd_log() {
   fi
 
   if [[ -n "${target}" ]]; then
-    # Show logs for a specific resource
-    container_name="infra-${target}"
+    # Try platform-<target> first
+    container_name="platform-${target}"
     if ! container_exists "${container_name}"; then
-      # Try without infra- prefix (might be an app name)
-      container_name="${target}"
+      # Try infra-<project_slug>-<target> if in a project context
+      if [[ -f "df.yml" ]]; then
+        local df_yml="${PWD}/df.yml"
+        local project_slug
+        project_slug="$(get_project_slug "${df_yml}")"
+        container_name="infra-${project_slug}-${target}"
+      fi
+
       if ! container_exists "${container_name}"; then
-        log_error "Container not found: ${target} (tried infra-${target} and ${target})"
-        return 1
+        # Try as raw container name
+        container_name="${target}"
+        if ! container_exists "${container_name}"; then
+          log_error "Container not found: ${target}"
+          return 1
+        fi
       fi
     fi
   else
-    # Show logs for current project
+    # No target: require project context
     validate_project_context || return 1
-
-    local df_yml
-    df_yml="$(find_df_yml)"
-
-    container_name="$(get_app_name "${df_yml}")"
-    if ! container_exists "${container_name}"; then
-      log_error "Container ${container_name} not found. Is it running?"
-      return 1
-    fi
+    log_error "Specify a service name: df log <service>"
+    return 1
   fi
 
   docker logs --tail "${tail_lines}" ${follow_flag} "${container_name}"
@@ -60,13 +60,12 @@ cmd_log() {
 # Shows usage for the log command.
 _log_usage() {
   cat <<EOF
-Usage: df log [resource] [options]
+Usage: df log [service] [options]
 
-Show logs for the project or a specific resource.
+Show logs for a platform or infrastructure service.
 
 Arguments:
-  resource       Name of the resource (e.g., sql_server, kafka)
-                 If omitted, shows logs for the current project
+  service        Name of the service (e.g., postgresql, kafka, sonarqube)
 
 Options:
   -f, --follow   Follow log output
@@ -74,8 +73,8 @@ Options:
   -h, --help     Show this help message
 
 Examples:
-  df log              # Logs for current project
-  df log sql_server   # Logs for SQL Server
-  df log -f           # Follow current project logs
+  df log postgresql    # Logs for this project's PostgreSQL
+  df log sonarqube     # Logs for platform SonarQube
+  df log kafka -f      # Follow Kafka logs
 EOF
 }

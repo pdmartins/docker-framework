@@ -1,0 +1,19 @@
+squads:
+  - index: 1
+    slug: bw
+    projects:
+      - index: 1
+        slug: agronomy
+      - index: 2
+        slug: assistant 
+  - index: 2
+    slug: pm
+    projects:
+      - index: 1
+        slug: obsidian
+  - index: 3
+    slug: av
+    projects:
+      - index: 1
+        slug: hv_stt
+

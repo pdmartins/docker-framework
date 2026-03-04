@@ -2,23 +2,12 @@
 # Command: df reset
 # Description: Reset project data, re-initialize, and restart
 
-# shellcheck source=../core.sh
-source "${LIB_DIR}/core.sh"
-# shellcheck source=../config.sh
-source "${LIB_DIR}/config.sh"
-# shellcheck source=../deps.sh
-source "${LIB_DIR}/deps.sh"
-# shellcheck source=../infra.sh
-source "${LIB_DIR}/infra.sh"
-# shellcheck source=../init.sh
-source "${LIB_DIR}/init.sh"
-
 # Resets project data, re-runs init scripts, and restarts.
 # Flow:
-#   1. Stop the project
-#   2. Remove project-specific data (drop database, delete topics, etc.)
+#   1. Stop project services
+#   2. Stop infra and remove data
 #   3. Re-run init scripts
-#   4. Restart the project
+#   4. Restart everything
 # Args: $@ - options
 cmd_reset() {
   local force=false
@@ -36,12 +25,11 @@ cmd_reset() {
   local df_yml
   df_yml="$(find_df_yml)"
 
-  local app_name
-  app_name="$(get_app_name "${df_yml}")"
+  resolve_project_metadata "${df_yml}"
 
   # Confirm reset
   if [[ "${force}" == false ]]; then
-    log_warn "This will DELETE all data for ${app_name} and re-initialize."
+    log_warn "This will DELETE all data for ${PROJECT_SLUG} and re-initialize."
     read -rp "Are you sure? (y/N) " confirm
     if [[ "${confirm}" != "y" && "${confirm}" != "Y" ]]; then
       log_info "Aborted"
@@ -49,39 +37,55 @@ cmd_reset() {
     fi
   fi
 
-  log_info "Resetting ${app_name}..."
+  log_info "Resetting ${PROJECT_SLUG}..."
 
-  # Stop the project
+  # Stop project services
+  local service_deps
+  service_deps="$(resolve_service_deps "${df_yml}")"
   local app_dir
   app_dir="$(dirname "${df_yml}")"
 
-  if is_container_running "${app_name}"; then
-    (cd "${app_dir}" && docker compose down -v 2>&1)
-    log_success "${app_name} stopped and volumes removed"
+  while IFS= read -r svc; do
+    [[ -z "${svc}" ]] && continue
+    local svc_dir="${app_dir}/${svc}"
+    if [[ -f "${svc_dir}/docker-compose.yml" ]]; then
+      docker compose -f "${svc_dir}/docker-compose.yml" \
+        --project-name "${PROJECT_SLUG}" down -v 2>&1
+    fi
+  done <<< "${service_deps}"
+
+  # Stop infra
+  stop_all_deps "${df_yml}"
+
+  # Remove project data
+  if [[ -d "${PROJECT_DATA_PATH}" ]]; then
+    log_info "Removing project data at ${PROJECT_DATA_PATH}..."
+    rm -rf "${PROJECT_DATA_PATH}"
+    log_success "Project data removed"
   fi
+
+  echo ""
 
   # Ensure infra is running for init scripts
   start_all_deps "${df_yml}" || return 1
 
   # Re-run init scripts
-  log_info "Re-initializing ${app_name}..."
+  log_info "Re-initializing ${PROJECT_SLUG}..."
   run_all_init_scripts "${df_yml}" || log_warn "Some init scripts failed"
 
-  # Generate .env for the project from config YAMLs
-  generate_project_env "${df_yml}" >/dev/null || true
+  # Restart project services
+  while IFS= read -r svc; do
+    [[ -z "${svc}" ]] && continue
+    local svc_dir="${app_dir}/${svc}"
+    if [[ -d "${svc_dir}" ]] && [[ -f "${svc_dir}/docker-compose.yml" ]]; then
+      log_info "Starting service: ${svc}..."
+      docker compose -f "${svc_dir}/docker-compose.yml" \
+        --project-name "${PROJECT_SLUG}" up -d --build 2>&1
+      log_success "${svc} (started)"
+    fi
+  done <<< "${service_deps}"
 
-  # Restart the project
-  log_info "Restarting ${app_name}..."
-  if ! (cd "${app_dir}" && docker compose up -d --build 2>&1); then
-    log_error "Failed to restart ${app_name}"
-    return 1
-  fi
-
-  local project_name
-  project_name="$(get_project_name "${df_yml}")"
-  local app_port
-  app_port="$(get_project_port "${app_name}" "${project_name}" 2>/dev/null || echo "?")"
-  log_success "${app_name} :${app_port} (reset complete)"
+  log_success "${PROJECT_SLUG} (reset complete)"
 }
 
 # Shows usage for the reset command.
@@ -92,9 +96,10 @@ Usage: df reset [options]
 Reset project data, re-run init scripts, and restart.
 
 This will:
-  1. Stop the project and remove its volumes
-  2. Re-run all init scripts (create databases, topics, etc.)
-  3. Restart the project
+  1. Stop project services and remove volumes
+  2. Remove project data directory
+  3. Re-start infra and run init scripts
+  4. Restart project services
 
 Options:
   -f, --force   Skip confirmation prompt

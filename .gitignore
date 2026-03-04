@@ -24,3 +24,7 @@ docker-compose.override.yml
 # Temp
 tmp/
 temp/
+
+# Copilot Agent Skills
+.copilot-core/
+.copilot-project/

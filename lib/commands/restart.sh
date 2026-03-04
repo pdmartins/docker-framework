@@ -2,16 +2,7 @@
 # Command: df restart
 # Description: Restart the project and its dependencies
 
-# shellcheck source=../core.sh
-source "${LIB_DIR}/core.sh"
-# shellcheck source=../config.sh
-source "${LIB_DIR}/config.sh"
-# shellcheck source=../deps.sh
-source "${LIB_DIR}/deps.sh"
-# shellcheck source=../infra.sh
-source "${LIB_DIR}/infra.sh"
-
-# Restarts the project application and optionally its infrastructure.
+# Restarts the project and optionally its infrastructure.
 # Args: $@ - options
 cmd_restart() {
   local restart_infra=false
@@ -29,28 +20,28 @@ cmd_restart() {
   local df_yml
   df_yml="$(find_df_yml)"
 
-  local app_name
-  app_name="$(get_app_name "${df_yml}")"
+  resolve_project_metadata "${df_yml}"
 
-  log_info "Restarting ${app_name}..."
+  log_info "Restarting ${PROJECT_SLUG}..."
 
-  # Stop the project
+  # Stop project services
+  local service_deps
+  service_deps="$(resolve_service_deps "${df_yml}")"
   local app_dir
   app_dir="$(dirname "${df_yml}")"
 
-  if is_container_running "${app_name}"; then
-    (cd "${app_dir}" && docker compose down 2>&1)
-  fi
+  while IFS= read -r svc; do
+    [[ -z "${svc}" ]] && continue
+    local svc_dir="${app_dir}/${svc}"
+    if [[ -f "${svc_dir}/docker-compose.yml" ]]; then
+      docker compose -f "${svc_dir}/docker-compose.yml" \
+        --project-name "${PROJECT_SLUG}" down 2>&1
+    fi
+  done <<< "${service_deps}"
 
   # Restart infra if requested
   if [[ "${restart_infra}" == true ]]; then
-    local deps
-    deps="$(resolve_deps "${df_yml}")"
-
-    while IFS= read -r dep; do
-      [[ -z "${dep}" ]] && continue
-      stop_infra "${dep}"
-    done <<< "${deps}"
+    stop_all_deps "${df_yml}"
   fi
 
   echo ""
@@ -64,7 +55,7 @@ _restart_usage() {
   cat <<EOF
 Usage: df restart [options]
 
-Restart the project application.
+Restart the project services.
 
 Options:
   --with-infra   Also restart infrastructure dependencies

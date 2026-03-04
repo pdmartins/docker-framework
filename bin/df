@@ -8,10 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly LIB_DIR="${ROOT_DIR}/lib"
-readonly INFRA_DIR="${ROOT_DIR}/infra"
-readonly INFRA_CONFIG_DIR="${INFRA_DIR}/.config"
+readonly TEMPLATES_DIR="${ROOT_DIR}/templates"
+readonly PLATFORM_DIR="${ROOT_DIR}/platform"
+readonly CONFIG_DIR="${ROOT_DIR}/config"
 
-export ROOT_DIR LIB_DIR INFRA_DIR INFRA_CONFIG_DIR
+export ROOT_DIR LIB_DIR TEMPLATES_DIR PLATFORM_DIR CONFIG_DIR
 
 # Source core libraries
 source "${LIB_DIR}/core.sh"
