@@ -1,0 +1,1 @@
+../../.copilot-core/agents/tester.agent.md

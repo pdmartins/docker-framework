@@ -1,0 +1,1 @@
+../../.copilot-core/instructions/agent-skills-core.instructions.md
