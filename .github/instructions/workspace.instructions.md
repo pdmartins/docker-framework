@@ -8,33 +8,32 @@ Este workspace gerencia o sistema de instruções do Copilot Agent usando o padr
 
 ## Workspace Structure
 
-| Repo | Caminho | Destino Final | Propósito |
-|------|---------|---------------|-----------|
-| **Core** | `.copilot-core/` | `.github/.copilot-core/` | Skills genéricos reutilizáveis |
-| **Project** | `.copilot-project/` | `.github/.copilot-project/` | Skills e dados específicos do projeto |
-
-## Arquitetura do Sistema
+| Repo | Caminho | Propósito |
+|------|---------|-----------|  
+| **Core** | `.copilot-core/` | Skills genéricos reutilizáveis |
+| **Project** | `.copilot-project/` | Skills e dados específicos do projeto |
 
 ```
 {projeto-alvo}/
+├── .copilot-core/              # Submodule - Core compartilhado
+│   ├── instructions/
+│   │   └── default.instructions.md
+│   ├── skills/                 # Core Skills (Agent Skills format)
+│   │   └── {skill-name}/
+│   │       └── SKILL.md
+│   └── templates/
+│       └── workspace.instructions.md
+│
+├── .copilot-project/           # Submodule (branch específica)
+│   ├── context/
+│   │   └── project.md          # Estado atual do projeto
+│   ├── memory/
+│   │   └── lessons-learned.md  # Lições aprendidas
+│   └── skills/                 # Project Skills
+│       └── {skill-name}/
+│           └── SKILL.md
+│
 └── .github/
-    ├── .copilot-core/              # Submodule - Core compartilhado
-    │   ├── instructions/
-    │   │   └── default.instructions.md
-    │   ├── skills/                 # Core Skills (Agent Skills format)
-    │   │   └── {skill-name}/
-    │   │       └── SKILL.md
-    │   └── templates/
-    │       └── workspace.instructions.md
-    │
-    └── .copilot-project/           # Submodule (branch específica)
-        ├── context/
-        │   └── project.md          # Estado atual do projeto
-        ├── memory/
-        │   └── lessons-learned.md  # Lições aprendidas
-        └── skills/                 # Project Skills
-            └── {skill-name}/
-                └── SKILL.md
 ```
 
 ## Padrão Agent Skills

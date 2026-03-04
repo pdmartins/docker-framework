@@ -1,8 +1,8 @@
-[submodule ".github/.copilot-core"]
-	path = .github/.copilot-core
-	url = https://github.com/pdmartins/.copilot-core.git
-	branch = main
-[submodule ".github/.copilot-project"]
-	path = .github/.copilot-project
+[submodule ".copilot-core"]
+        path = .copilot-core
+        url = https://github.com/pdmartins/.copilot-core.git
+        branch = main
+[submodule ".copilot-project"]
+	path = .copilot-project
 	url = https://github.com/pdmartins/.copilot-project.git
 	branch = docker-framework
