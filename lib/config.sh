@@ -14,6 +14,7 @@ SERVICE_PORTS=(
   [redis]=379
   [rabbitmq]=672
   [rabbitmq_mgmt]=673
+  [couchdb]=984
 )
 
 # --- YAML helpers ---
@@ -220,11 +221,12 @@ generate_ports_doc() {
     echo "| Redis | 6379 | 379 |"
     echo "| RabbitMQ | 5672 | 672 |"
     echo "| RabbitMQ Management | 15672 | 673 |"
+    echo "| CouchDB | 5984 | 984 |"
     echo ""
     echo "## Assignments"
     echo ""
-    echo "| Squad | Project | Prefix | PostgreSQL | Kafka | Zookeeper | Redis | RabbitMQ | RabbitMQ Mgmt |"
-    echo "|-------|---------|--------|------------|-------|-----------|-------|----------|---------------|"
+    echo "| Squad | Project | Prefix | PostgreSQL | Kafka | Zookeeper | Redis | RabbitMQ | RabbitMQ Mgmt | CouchDB |"
+    echo "|-------|---------|--------|------------|-------|-----------|-------|----------|---------------|---------|"
 
     local squad_count
     squad_count="$(read_yaml "${squads_file}" '.squads | length')"
@@ -245,15 +247,16 @@ generate_ports_doc() {
         proj_index="$(read_yaml "${squads_file}" ".squads[${i}].projects[${j}].index")"
         prefix="$(calculate_port_prefix "${squad_index}" "${proj_index}")"
 
-        local pg kafka zk redis rmq rmq_mgmt
+        local pg kafka zk redis rmq rmq_mgmt couchdb
         pg=$(( prefix * 1000 + 10#${SERVICE_PORTS[postgresql]} ))
         kafka=$(( prefix * 1000 + 10#${SERVICE_PORTS[kafka]} ))
         zk=$(( prefix * 1000 + 10#${SERVICE_PORTS[zookeeper]} ))
         redis=$(( prefix * 1000 + 10#${SERVICE_PORTS[redis]} ))
         rmq=$(( prefix * 1000 + 10#${SERVICE_PORTS[rabbitmq]} ))
         rmq_mgmt=$(( prefix * 1000 + 10#${SERVICE_PORTS[rabbitmq_mgmt]} ))
+        couchdb=$(( prefix * 1000 + 10#${SERVICE_PORTS[couchdb]} ))
 
-        echo "| ${squad_slug} | ${proj_slug} | ${prefix} | ${pg} | ${kafka} | ${zk} | ${redis} | ${rmq} | ${rmq_mgmt} |"
+        echo "| ${squad_slug} | ${proj_slug} | ${prefix} | ${pg} | ${kafka} | ${zk} | ${redis} | ${rmq} | ${rmq_mgmt} | ${couchdb} |"
 
         j=$((j + 1))
       done

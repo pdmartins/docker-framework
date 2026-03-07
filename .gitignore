@@ -28,3 +28,4 @@ temp/
 # Copilot Agent Skills
 .copilot-core/
 .copilot-project/
+project-*/

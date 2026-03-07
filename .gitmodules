@@ -6,3 +6,7 @@
 	path = .copilot-project
 	url = https://github.com/pdmartins/.copilot-project.git
 	branch = docker-framework
+[submodule "project-pm"]
+	path = project-pm
+	url = https://github.com/pdmartins/docker-framework-pm.git
+	branch = main

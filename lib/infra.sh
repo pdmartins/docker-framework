@@ -39,10 +39,18 @@ start_infra() {
   local env_file
   env_file="$(generate_infra_env "${project_slug}" "${project_data_path}" "${squad_index}" "${project_index}")"
 
+  # Load per-project credentials .env if present (overrides template defaults)
+  local project_dir extra_env_args
+  project_dir="$(dirname "${project_data_path}")"
+  extra_env_args=()
+  if [[ -f "${project_dir}/.env" ]]; then
+    extra_env_args=(--env-file "${project_dir}/.env")
+  fi
+
   local project_name="infra-${project_slug}"
 
   # Start the container
-  if ! docker compose -f "${compose_file}" --env-file "${env_file}" \
+  if ! docker compose -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
        --project-name "${project_name}" up -d 2>&1; then
     log_error "Failed to start ${service} for ${project_slug}"
     rm -f "${env_file}"
@@ -83,9 +91,17 @@ stop_infra() {
   local env_file
   env_file="$(generate_infra_env "${project_slug}" "${project_data_path}" "${squad_index}" "${project_index}")"
 
+  # Load per-project credentials .env if present
+  local project_dir extra_env_args
+  project_dir="$(dirname "${project_data_path}")"
+  extra_env_args=()
+  if [[ -f "${project_dir}/.env" ]]; then
+    extra_env_args=(--env-file "${project_dir}/.env")
+  fi
+
   local project_name="infra-${project_slug}"
 
-  docker compose -f "${compose_file}" --env-file "${env_file}" \
+  docker compose -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
     --project-name "${project_name}" down 2>&1
 
   rm -f "${env_file}"
