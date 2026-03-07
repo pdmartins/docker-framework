@@ -180,6 +180,9 @@ resolve_project_metadata() {
 
   # Try df.yml index first, fall back to squads.yml lookup
   PROJECT_INDEX="$(get_project_index "${df_yml}")"
+  if [[ -z "${PROJECT_INDEX}" || "${PROJECT_INDEX}" == "null" ]]; then
+    PROJECT_INDEX="$(lookup_project_index "${SQUAD_SLUG}" "${PROJECT_SLUG}")"
+  fi
   SQUAD_INDEX="$(get_squad_index "${SQUAD_SLUG}")"
 
   # Data path: parent directory of where df.yml lives + /data
