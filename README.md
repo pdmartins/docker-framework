@@ -5,7 +5,7 @@ CLI (`df`) em Bash para orquestração de ambientes Docker multi-projeto. Gerenc
 ## Pré-requisitos
 
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
-- [yq](https://github.com/mikefarah/yq) (parser YAML)
+- [yq](https://github.com/mikefarah/ã) (parser YAML)
 - Bash 4+
 - Git
 

@@ -28,6 +28,8 @@ source "${LIB_DIR}/commands/restart.sh"
 source "${LIB_DIR}/commands/status.sh"
 source "${LIB_DIR}/commands/reset.sh"
 source "${LIB_DIR}/commands/log.sh"
+source "${LIB_DIR}/commands/backup.sh"
+source "${LIB_DIR}/commands/nuke.sh"
 
 # Shows usage information and available commands.
 show_usage() {
@@ -40,9 +42,12 @@ Commands:
   start      Start infrastructure dependencies and project
   stop       Stop project (and unused infra)
   restart    Restart project and dependencies
-  status     Show status of all managed containers
+  status     Show status of all managed containers (CPU, MEM, volumes)
   reset      Reset project data, re-init, and restart
   log        Show logs for project or specific resource
+  backup     Backup Docker volumes for managed containers
+  restore    Restore Docker volumes from backup archives
+  nuke       Clean Docker resources (soft: prune, hard: full reset)
 
 Options:
   -h, --help     Show this help message
@@ -72,6 +77,9 @@ main() {
     stop)       cmd_stop "$@" ;;
     restart)    cmd_restart "$@" ;;
     status)     cmd_status "$@" ;;
+    backup)     cmd_backup "$@" ;;
+    restore)    cmd_restore "$@" ;;
+    nuke)       cmd_nuke "$@" ;;
     reset)      cmd_reset "$@" ;;
     log)        cmd_log "$@" ;;
     -h|--help)  show_usage ;;

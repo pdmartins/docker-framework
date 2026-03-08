@@ -30,7 +30,7 @@ start_infra() {
     return 0
   fi
 
-  log_info "Starting ${service} for ${project_slug}..."
+  log_step "Starting ${service} for ${project_slug}..."
 
   # Ensure data directory exists
   mkdir -p "${project_data_path}/${service}"
@@ -40,11 +40,10 @@ start_infra() {
   env_file="$(generate_infra_env "${project_slug}" "${project_data_path}" "${squad_index}" "${project_index}")"
 
   # Load per-project credentials .env if present (overrides template defaults)
-  local project_dir extra_env_args
-  project_dir="$(dirname "${project_data_path}")"
+  local extra_env_args
   extra_env_args=()
-  if [[ -f "${project_dir}/.env" ]]; then
-    extra_env_args=(--env-file "${project_dir}/.env")
+  if [[ -n "${PROJECT_DIR:-}" && -f "${PROJECT_DIR}/.env" ]]; then
+    extra_env_args=(--env-file "${PROJECT_DIR}/.env")
   fi
 
   local project_name="infra-${project_slug}"
@@ -59,8 +58,10 @@ start_infra() {
 
   rm -f "${env_file}"
 
-  # Wait for healthy
-  wait_for_healthy "${container_name}" 60
+  # Wait for healthy unless --nowait was requested
+  if [[ "${DF_NOWAIT:-false}" != "true" ]]; then
+    wait_for_healthy "${container_name}" 60
+  fi
 
   local port
   port="$(get_host_port "${service}" "${squad_index}" "${project_index}" 2>/dev/null || echo "?")"
@@ -86,17 +87,16 @@ stop_infra() {
     return 0
   fi
 
-  log_info "Stopping ${service} for ${project_slug}..."
+  log_step "Stopping ${service} for ${project_slug}..."
 
   local env_file
   env_file="$(generate_infra_env "${project_slug}" "${project_data_path}" "${squad_index}" "${project_index}")"
 
   # Load per-project credentials .env if present
-  local project_dir extra_env_args
-  project_dir="$(dirname "${project_data_path}")"
+  local extra_env_args
   extra_env_args=()
-  if [[ -f "${project_dir}/.env" ]]; then
-    extra_env_args=(--env-file "${project_dir}/.env")
+  if [[ -n "${PROJECT_DIR:-}" && -f "${PROJECT_DIR}/.env" ]]; then
+    extra_env_args=(--env-file "${PROJECT_DIR}/.env")
   fi
 
   local project_name="infra-${project_slug}"

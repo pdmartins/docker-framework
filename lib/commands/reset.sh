@@ -12,13 +12,23 @@
 cmd_reset() {
   local force=false
 
+  local project_slug=""
+
   while [[ $# -gt 0 ]]; do
     case "${1}" in
       -f|--force)  force=true; shift ;;
       -h|--help)   _reset_usage; return 0 ;;
-      *)           log_error "Unknown option: ${1}"; return 1 ;;
+      -*)          log_error "Unknown option: ${1}"; return 1 ;;
+      *)           [[ -z "${project_slug}" ]] && project_slug="${1}" || { log_error "Unexpected argument: ${1}"; return 1; }; shift ;;
     esac
   done
+
+  local DF_PROJECT_DIR
+  if [[ -n "${project_slug}" ]]; then
+    DF_PROJECT_DIR="$(resolve_project_dir_by_slug "${project_slug}")" || return 1
+  else
+    DF_PROJECT_DIR="${PWD}"
+  fi
 
   validate_project_context || return 1
 
@@ -91,9 +101,12 @@ cmd_reset() {
 # Shows usage for the reset command.
 _reset_usage() {
   cat <<EOF
-Usage: df reset [options]
+Usage: df reset [project] [options]
 
 Reset project data, re-run init scripts, and restart.
+
+Arguments:
+  project   Project slug (e.g. project-pm-obsidian). Defaults to current directory.
 
 This will:
   1. Stop project services and remove volumes

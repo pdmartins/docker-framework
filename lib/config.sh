@@ -170,7 +170,7 @@ generate_infra_env() {
 }
 
 # Resolves project metadata from df.yml and squads.yml.
-# Sets global variables: PROJECT_SLUG, SQUAD_SLUG, SQUAD_INDEX, PROJECT_INDEX, PROJECT_DATA_PATH
+# Sets global variables: PROJECT_SLUG, SQUAD_SLUG, SQUAD_INDEX, PROJECT_INDEX, PROJECT_DATA_PATH, PROJECT_DIR
 # Args: $1 - path to df.yml
 resolve_project_metadata() {
   local df_yml="${1}"
@@ -185,10 +185,17 @@ resolve_project_metadata() {
   fi
   SQUAD_INDEX="$(get_squad_index "${SQUAD_SLUG}")"
 
-  # Data path: parent directory of where df.yml lives + /data
-  local project_dir
-  project_dir="$(cd "$(dirname "${df_yml}")" && pwd)"
-  PROJECT_DATA_PATH="${project_dir}/data"
+  # Always resolve the directory where df.yml lives
+  PROJECT_DIR="$(cd "$(dirname "${df_yml}")" && pwd)"
+
+  # Data path: use explicit data_path from df.yml if set, otherwise default to {PROJECT_DIR}/data
+  local custom_data_path
+  custom_data_path="$(read_yaml "${df_yml}" '.project.data_path // ""')"
+  if [[ -n "${custom_data_path}" && "${custom_data_path}" != "null" ]]; then
+    PROJECT_DATA_PATH="${custom_data_path}"
+  else
+    PROJECT_DATA_PATH="${PROJECT_DIR}/data"
+  fi
 }
 
 # --- Ports documentation ---
