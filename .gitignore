@@ -32,3 +32,5 @@ project-*/
 !project-mv/
 platform/copilot-api/volumes/data/github_token
 project-mv/copilot-api/volumes/data/github_token
+platform/sonarqube/volumes/
+project-mv/copilot-api/volumes/
