@@ -1,0 +1,40 @@
+services:
+  copilot-api:
+    # image: ghcr.io/ericc-ch/copilot-api:latest
+    build:
+      context: /repos/_mv/ericc-ch--copilot-api
+    container_name: platform-copilot-api
+    ports:
+      - "4141:4141"
+    environment:
+      - GH_TOKEN=${GH_TOKEN}
+    volumes:
+      - platform-copilot-api-data:/root/.local/share/copilot-api
+    #command: --verbose
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: copilot-api
+    healthcheck:
+      test: curl -sf http://localhost:4141/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  platform-copilot-api-data:
+    name: platform-copilot-api-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/data
+
+networks:
+  df-network:
+    name: df-network
+    external: true

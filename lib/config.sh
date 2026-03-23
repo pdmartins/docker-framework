@@ -169,14 +169,25 @@ generate_infra_env() {
   echo "${env_file}"
 }
 
+# Guard flag to avoid re-running validate_squads_registry on every metadata resolution.
+_SQUADS_VALIDATED=false
+
 # Resolves project metadata from df.yml and squads.yml.
 # Sets global variables: PROJECT_SLUG, SQUAD_SLUG, SQUAD_INDEX, PROJECT_INDEX, PROJECT_DATA_PATH, PROJECT_DIR
 # Args: $1 - path to df.yml
 resolve_project_metadata() {
   local df_yml="${1}"
 
+  # Validate squads.yml once per invocation (fail fast on index collisions)
+  if [[ "${_SQUADS_VALIDATED}" != "true" ]]; then
+    validate_squads_registry || return 1
+    _SQUADS_VALIDATED=true
+  fi
+
   PROJECT_SLUG="$(get_project_slug "${df_yml}")"
   SQUAD_SLUG="$(get_squad_slug "${df_yml}")"
+
+  validate_project_slug "${PROJECT_SLUG}" || return 1
 
   # Try df.yml index first, fall back to squads.yml lookup
   PROJECT_INDEX="$(get_project_index "${df_yml}")"
@@ -195,6 +206,91 @@ resolve_project_metadata() {
     PROJECT_DATA_PATH="${custom_data_path}"
   else
     PROJECT_DATA_PATH="${PROJECT_DIR}/data"
+  fi
+}
+
+# --- Validation ---
+
+# Validates squads.yml for duplicate squad/project indices that would cause port collisions.
+# Returns: 0 if valid, 1 if any duplicates detected
+validate_squads_registry() {
+  local squads_file="${CONFIG_DIR}/squads.yml"
+
+  if [[ ! -f "${squads_file}" ]]; then
+    log_error "squads.yml not found: ${squads_file}"
+    return 1
+  fi
+
+  local errors=0
+
+  local squad_count
+  if ! squad_count="$(yq '.squads | length' "${squads_file}" 2>&1)"; then
+    log_error "Failed to parse squads.yml: ${squad_count}"
+    return 1
+  fi
+
+  local -A seen_squad_indices
+  local i=0
+  while [[ "${i}" -lt "${squad_count}" ]]; do
+    local squad_slug squad_index
+    squad_slug="$(yq ".squads[${i}].slug" "${squads_file}")"
+    squad_index="$(yq ".squads[${i}].index" "${squads_file}")"
+
+    if [[ "${squad_index}" == "null" || -z "${squad_index}" ]]; then
+      log_error "squads.yml: squad '${squad_slug}' (index ${i}) has no index field"
+      errors=1
+    elif [[ -n "${seen_squad_indices[${squad_index}]:-}" ]]; then
+      log_error "squads.yml: duplicate squad index ${squad_index} used by '${seen_squad_indices[${squad_index}]}' and '${squad_slug}' — port collision!"
+      errors=1
+    else
+      seen_squad_indices["${squad_index}"]="${squad_slug}"
+    fi
+
+    local proj_count
+    proj_count="$(yq ".squads[${i}].projects | length" "${squads_file}")"
+
+    local -A seen_proj_indices
+    local j=0
+    while [[ "${j}" -lt "${proj_count}" ]]; do
+      local proj_slug proj_index
+      proj_slug="$(yq ".squads[${i}].projects[${j}].slug" "${squads_file}")"
+      proj_index="$(yq ".squads[${i}].projects[${j}].index" "${squads_file}")"
+
+      if [[ "${proj_index}" == "null" || -z "${proj_index}" ]]; then
+        log_error "squads.yml: project '${proj_slug}' in squad '${squad_slug}' has no index field"
+        errors=1
+      elif [[ -n "${seen_proj_indices[${proj_index}]:-}" ]]; then
+        log_error "squads.yml: duplicate project index ${proj_index} in squad '${squad_slug}' (used by '${seen_proj_indices[${proj_index}]}' and '${proj_slug}') — port collision!"
+        errors=1
+      else
+        seen_proj_indices["${proj_index}"]="${proj_slug}"
+      fi
+
+      j=$((j + 1))
+    done
+    unset seen_proj_indices
+
+    i=$((i + 1))
+  done
+
+  return "${errors}"
+}
+
+# Validates a project slug for Docker container name compatibility.
+# Docker container names must start with [a-zA-Z0-9] and contain only [a-zA-Z0-9_.-].
+# Args: $1 - slug to validate
+# Returns: 0 if valid, 1 otherwise
+validate_project_slug() {
+  local slug="${1}"
+
+  if [[ -z "${slug}" || "${slug}" == "null" ]]; then
+    log_error "PROJECT_SLUG is empty or null — check the 'project.name' field in df.yml"
+    return 1
+  fi
+
+  if [[ ! "${slug}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+    log_error "Invalid PROJECT_SLUG '${slug}': must start with alphanumeric and contain only [a-zA-Z0-9_.-]"
+    return 1
   fi
 }
 

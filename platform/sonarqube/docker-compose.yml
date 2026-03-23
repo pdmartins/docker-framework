@@ -1,17 +1,23 @@
 services:
   sonarqube:
-    image: sonarqube:lts-community
+    image: sonarqube:26.3.0.120487-community
     container_name: platform-sonarqube
     ports:
       - "9000:9000"
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: sonarqube
     volumes:
       - platform-sonarqube-data:/opt/sonarqube/data
       - platform-sonarqube-logs:/opt/sonarqube/logs
       - platform-sonarqube-extensions:/opt/sonarqube/extensions
     networks:
       - df-network
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
     labels:
       managed-by: docker-framework
       df.type: platform
@@ -24,13 +30,57 @@ services:
       start_period: 120s
     restart: unless-stopped
 
+  sonarqube-db:
+    image: postgres:16-alpine
+    container_name: platform-sonarqube-db
+    environment:
+      POSTGRES_USER: sonarqube
+      POSTGRES_PASSWORD: sonarqube
+      POSTGRES_DB: sonarqube
+    volumes:
+      - platform-sonarqube-postgresql:/var/lib/postgresql/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: sonarqube-db
+    healthcheck:
+      test: pg_isready -U sonarqube -d sonarqube
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   platform-sonarqube-data:
     name: platform-sonarqube-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/data
   platform-sonarqube-logs:
     name: platform-sonarqube-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/logs
   platform-sonarqube-extensions:
     name: platform-sonarqube-extensions
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/extensions
+  platform-sonarqube-postgresql:
+    name: platform-sonarqube-postgresql
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/postgresql
 
 networks:
   df-network:

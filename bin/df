@@ -30,6 +30,7 @@ source "${LIB_DIR}/commands/reset.sh"
 source "${LIB_DIR}/commands/log.sh"
 source "${LIB_DIR}/commands/backup.sh"
 source "${LIB_DIR}/commands/nuke.sh"
+source "${LIB_DIR}/commands/platform.sh"
 
 # Shows usage information and available commands.
 show_usage() {
@@ -48,6 +49,7 @@ Commands:
   backup     Backup Docker volumes for managed containers
   restore    Restore Docker volumes from backup archives
   nuke       Clean Docker resources (soft: prune, hard: full reset)
+  platform   Manage shared platform services (start, stop, status)
 
 Options:
   -h, --help     Show this help message
@@ -82,6 +84,7 @@ main() {
     nuke)       cmd_nuke "$@" ;;
     reset)      cmd_reset "$@" ;;
     log)        cmd_log "$@" ;;
+    platform)   cmd_platform "$@" ;;
     -h|--help)  show_usage ;;
     -v|--version) show_version ;;
     *)

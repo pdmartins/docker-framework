@@ -29,3 +29,6 @@ temp/
 .copilot-core/
 .copilot-project/
 project-*/
+!project-mv/
+platform/copilot-api/volumes/data/github_token
+project-mv/copilot-api/volumes/data/github_token

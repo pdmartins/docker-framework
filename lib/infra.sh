@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Infrastructure and platform management: start, stop, manage containers via templates.
 
+# Runs docker compose, or prints the command in dry-run mode.
+# Args: $@ - docker compose arguments
+_dc() {
+  if [[ "${DF_DRY_RUN:-false}" == "true" ]]; then
+    echo "[DRY-RUN] docker compose $*" >&2
+    return 0
+  fi
+  docker compose "$@"
+}
+
 # --- Infra (per-project, template-based) ---
 
 # Starts an infrastructure service for a project using the corresponding template.
@@ -49,7 +59,7 @@ start_infra() {
   local project_name="infra-${project_slug}"
 
   # Start the container
-  if ! docker compose -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
+  if ! _dc -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
        --project-name "${project_name}" up -d 2>&1; then
     log_error "Failed to start ${service} for ${project_slug}"
     rm -f "${env_file}"
@@ -58,8 +68,8 @@ start_infra() {
 
   rm -f "${env_file}"
 
-  # Wait for healthy unless --nowait was requested
-  if [[ "${DF_NOWAIT:-false}" != "true" ]]; then
+  # Wait for healthy unless --nowait or --dry-run was requested
+  if [[ "${DF_NOWAIT:-false}" != "true" && "${DF_DRY_RUN:-false}" != "true" ]]; then
     wait_for_healthy "${container_name}" 60
   fi
 
@@ -101,7 +111,7 @@ stop_infra() {
 
   local project_name="infra-${project_slug}"
 
-  docker compose -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
+  _dc -f "${compose_file}" --env-file "${env_file}" "${extra_env_args[@]}" \
     --project-name "${project_name}" down 2>&1
 
   rm -f "${env_file}"
@@ -131,12 +141,14 @@ start_platform() {
 
   log_info "Starting platform service: ${service}..."
 
-  if ! docker compose -f "${compose_file}" --project-name "platform-${service}" up -d 2>&1; then
+  if ! _dc -f "${compose_file}" --project-name "platform-${service}" up -d 2>&1; then
     log_error "Failed to start platform service: ${service}"
     return 1
   fi
 
-  wait_for_healthy "${container_name}" 120
+  if [[ "${DF_DRY_RUN:-false}" != "true" ]]; then
+    wait_for_healthy "${container_name}" 120
+  fi
 
   log_success "${service} (platform, started)"
 }
@@ -155,7 +167,7 @@ stop_platform() {
   fi
 
   log_info "Stopping platform service: ${service}..."
-  docker compose -f "${compose_file}" --project-name "platform-${service}" down 2>&1
+  _dc -f "${compose_file}" --project-name "platform-${service}" down 2>&1
   log_success "${service} (platform) stopped"
 }
 
@@ -196,7 +208,7 @@ start_all_deps() {
 
   # Start platform dependencies
   local platform_deps
-  platform_deps="$(read_yaml "${df_yml}" '.dependencies.platform[]' 2>/dev/null || true)"
+  platform_deps="$(resolve_platform_deps "${df_yml}")" || return 1
 
   while IFS= read -r dep; do
     [[ -z "${dep}" ]] && continue
@@ -207,7 +219,7 @@ start_all_deps() {
 
   # Start infra dependencies
   local infra_deps
-  infra_deps="$(read_yaml "${df_yml}" '.dependencies.infra[]' 2>/dev/null || true)"
+  infra_deps="$(resolve_infra_deps "${df_yml}")" || return 1
 
   while IFS= read -r dep; do
     [[ -z "${dep}" ]] && continue
@@ -229,7 +241,7 @@ stop_all_deps() {
 
   # Stop infra dependencies
   local infra_deps
-  infra_deps="$(read_yaml "${df_yml}" '.dependencies.infra[]' 2>/dev/null || true)"
+  infra_deps="$(resolve_infra_deps "${df_yml}")" || return 1
 
   while IFS= read -r dep; do
     [[ -z "${dep}" ]] && continue

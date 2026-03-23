@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# claude-proxy — Toggle Claude Code entre copilot-api e Anthropic direto
+#
+# Uso:
+#   claude-proxy enable   # Usa copilot-api (GitHub Copilot) em localhost:4141
+#   claude-proxy disable  # Volta para Anthropic direto (OAuth/API key)
+#   claude-proxy status   # Exibe modo atual e estado do container
+#   claude-proxy auth     # Autentica o copilot-api com GitHub Copilot
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COPILOT_API_DIR="$(cd "${SCRIPT_DIR}/../project-mv/copilot-api" && pwd)"
+CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
+COPILOT_API_URL="http://localhost:4141"
+CONTAINER_NAME="platform-copilot-api"
+
+# Configurações injetadas no settings.json do Claude Code ao ativar o proxy.
+# Ajuste os modelos conforme os disponíveis no seu GitHub Copilot.
+COPILOT_ENV_BLOCK='{
+	"ANTHROPIC_BASE_URL": "http://localhost:4141",
+	"ANTHROPIC_AUTH_TOKEN": "dummy",
+	"ANTHROPIC_MODEL": "claude-sonnet-4.6",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.6",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4.6",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
+	"CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4.6",
+	"DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+}'
+
+# Cores
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+_usage() {
+  cat <<EOF
+${BOLD}claude-proxy${RESET} — Alterna Claude Code entre copilot-api e Anthropic direto
+
+${BOLD}Uso:${RESET}
+  claude-proxy <comando>
+
+${BOLD}Comandos:${RESET}
+  enable    Inicia copilot-api e aponta Claude Code para localhost:4141
+  disable   Para copilot-api e reverte Claude Code para Anthropic direto
+  status    Exibe modo atual e estado do container
+  auth      Abre fluxo de autenticação OAuth do GitHub Copilot
+
+${BOLD}Exemplos:${RESET}
+  claude-proxy enable
+  claude-proxy status
+  GH_TOKEN=ghp_xxx claude-proxy enable    # usando Personal Access Token
+
+EOF
+}
+
+_check_deps() {
+  if ! command -v docker &>/dev/null; then
+    echo -e "${RED}Erro: Docker não encontrado${RESET}" >&2
+    exit 1
+  fi
+  if ! command -v jq &>/dev/null; then
+    echo -e "${RED}Erro: jq não encontrado (necessário para modificar settings.json)${RESET}" >&2
+    exit 1
+  fi
+}
+
+_get_api_url() {
+  jq -r '.env.ANTHROPIC_BASE_URL // empty' "${CLAUDE_SETTINGS}" 2>/dev/null || true
+}
+
+_set_api_url() {
+  local tmp
+  tmp="$(mktemp)"
+  jq --argjson env "${COPILOT_ENV_BLOCK}" \
+    '. + {env: $env}' "${CLAUDE_SETTINGS}" > "${tmp}"
+  mv "${tmp}" "${CLAUDE_SETTINGS}"
+}
+
+_remove_api_url() {
+  local tmp
+  tmp="$(mktemp)"
+  jq 'del(.env)' "${CLAUDE_SETTINGS}" > "${tmp}"
+  mv "${tmp}" "${CLAUDE_SETTINGS}"
+}
+
+_container_status() {
+  docker inspect "${CONTAINER_NAME}" --format='{{.State.Status}}' 2>/dev/null || echo "not_found"
+}
+
+_is_container_running() {
+  [[ "$(_container_status)" == "running" ]]
+}
+
+_check_auth() {
+  # Verifica se há credenciais salvas no volume do container
+  if _is_container_running; then
+    if docker exec "${CONTAINER_NAME}" test -f /root/.local/share/copilot-api/github_token 2>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+cmd_enable() {
+  echo -e "${BOLD}Ativando modo copilot-api...${RESET}"
+  echo ""
+
+  echo -e "  ${CYAN}Injetando env no Claude Code...${RESET}"
+  _set_api_url
+
+  echo ""
+  echo -e "${GREEN}${BOLD}✓ Modo copilot-api ativo${RESET}"
+  echo -e "  Claude Code agora usa: ${BOLD}${COPILOT_API_URL}${RESET} (GitHub Copilot)"
+  echo -e "  Para reverter: ${BOLD}claude-proxy disable${RESET}"
+}
+
+cmd_disable() {
+  echo -e "${BOLD}Desativando modo copilot-api...${RESET}"
+  echo ""
+
+  local current
+  current="$(_get_api_url)"
+  if [[ -n "${current}" ]]; then
+    echo -e "  ${CYAN}Removendo env de ${CLAUDE_SETTINGS}...${RESET}"
+    _remove_api_url
+  else
+    echo -e "  ${YELLOW}env não configurado (já em modo direto)${RESET}"
+  fi
+
+  echo ""
+  echo -e "${GREEN}${BOLD}✓ Modo Anthropic direto ativo${RESET}"
+  echo -e "  Claude Code agora usa: ${BOLD}Anthropic direto${RESET} (OAuth / API key)"
+  echo -e "  Para ativar copilot-api: ${BOLD}claude-proxy enable${RESET}"
+}
+
+cmd_status() {
+  echo -e "${BOLD}=== Claude Code — Modo de Conexão ===${RESET}"
+  echo ""
+
+  local api_url
+  api_url="$(_get_api_url)"
+
+  if [[ -n "${api_url}" ]]; then
+    echo -e "  Modo:    ${YELLOW}${BOLD}proxy${RESET}"
+    echo -e "  URL:     ${api_url}"
+  else
+    echo -e "  Modo:    ${GREEN}${BOLD}direto${RESET} (Anthropic)"
+    echo -e "  URL:     https://api.anthropic.com (padrão)"
+  fi
+
+  if [[ -n "${api_url}" ]]; then
+    echo ""
+    echo -e "${BOLD}=== Servidor ===${RESET}"
+    echo ""
+    if curl -sf --max-time 3 "${api_url}" &>/dev/null; then
+      echo -e "  Status:  ${GREEN}running${RESET}"
+    else
+      echo -e "  Status:  ${RED}não responde${RESET}"
+      echo ""
+      echo -e "  ${RED}⚠  AVISO: Claude Code aponta para proxy mas o servidor não respondeu!${RESET}"
+      echo -e "     Verifique se o copilot-api está rodando."
+      echo ""
+    fi
+  fi
+}
+
+cmd_auth() {
+  _check_deps
+
+  if ! _is_container_running; then
+    echo -e "${YELLOW}Container não está rodando. Subindo...${RESET}"
+    docker compose -f "${COPILOT_API_DIR}/docker-compose.yml" up -d
+    sleep 3
+  fi
+
+  echo -e "${BOLD}Iniciando autenticação OAuth com GitHub Copilot...${RESET}"
+  echo ""
+  docker exec -it "${CONTAINER_NAME}" bun /app/dist/main.js auth
+}
+
+# --- Main ---
+case "${1:-}" in
+  enable)   cmd_enable ;;
+  disable)  cmd_disable ;;
+  status)   cmd_status ;;
+  auth)     cmd_auth ;;
+  -h|--help) _usage ;;
+  "")       _usage; exit 0 ;;
+  *)
+    echo -e "${RED}Comando desconhecido: ${1}${RESET}" >&2
+    _usage
+    exit 1
+    ;;
+esac

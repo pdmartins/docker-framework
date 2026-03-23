@@ -2,6 +2,16 @@
 # Init script execution: runs project-specific initialization scripts
 # inside infrastructure containers.
 
+# --- Default service credentials ---
+# These defaults match the values set in each service's docker-compose template.
+# Override per project by setting these variables in the project's .env file.
+: "${INIT_POSTGRESQL_USER:=postgres}"
+: "${INIT_POSTGRESQL_DB:=postgres}"
+: "${INIT_MONGODB_USER:=root}"
+: "${INIT_MONGODB_PASSWORD:=root}"
+: "${INIT_SQL_SERVER_USER:=sa}"
+: "${INIT_SQL_SERVER_PASSWORD:=YourStrong!Passw0rd}"
+
 # Executes all init scripts for a project's dependencies.
 # Args: $1 - path to df.yml
 # Returns: 0 if all succeeded, 1 if any failed
@@ -20,6 +30,14 @@ run_all_init_scripts() {
   # Resolve project metadata for container names
   resolve_project_metadata "${df_yml}"
 
+  # Load project .env into shell so credential overrides are available to init handlers
+  if [[ -f "${PROJECT_DIR}/.env" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${PROJECT_DIR}/.env"
+    set +a
+  fi
+
   local deps
   deps="$(resolve_infra_deps "${df_yml}")"
 
@@ -31,6 +49,11 @@ run_all_init_scripts() {
     init_file="$(find_init_script "${init_dir}" "${dep}")"
 
     if [[ -z "${init_file}" ]]; then
+      continue
+    fi
+
+    if [[ "${DF_DRY_RUN:-false}" == "true" ]]; then
+      log_step "[DRY-RUN] Would run init script for ${dep}: ${init_file}"
       continue
     fi
 
@@ -104,7 +127,7 @@ run_init_sql_server() {
   local container_name="${2}"
 
   docker exec -i "${container_name}" /opt/mssql-tools18/bin/sqlcmd \
-    -S localhost -U sa -P "YourStrong!Passw0rd" \
+    -S localhost -U "${INIT_SQL_SERVER_USER}" -P "${INIT_SQL_SERVER_PASSWORD}" \
     -C -i "/dev/stdin" < "${init_file}"
 }
 
@@ -115,7 +138,7 @@ run_init_postgresql() {
   local container_name="${2}"
 
   docker exec -i "${container_name}" psql \
-    -U postgres -d postgres \
+    -U "${INIT_POSTGRESQL_USER}" -d "${INIT_POSTGRESQL_DB}" \
     < "${init_file}"
 }
 
@@ -134,7 +157,7 @@ run_init_mongodb() {
   local container_name="${2}"
 
   docker exec -i "${container_name}" mongosh \
-    -u root -p root \
+    -u "${INIT_MONGODB_USER}" -p "${INIT_MONGODB_PASSWORD}" \
     --authenticationDatabase admin \
     < "${init_file}"
 }

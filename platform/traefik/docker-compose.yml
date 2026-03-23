@@ -1,0 +1,32 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: platform-traefik
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=df-network"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--log.level=WARN"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - df-network
+    labels:
+      managed-by: "docker-framework"
+      df.type: "platform"
+      traefik.enable: "true"
+      traefik.http.routers.traefik-dashboard.rule: "Host(`traefik.localhost`)"
+      traefik.http.routers.traefik-dashboard.service: "api@internal"
+    restart: unless-stopped
+
+networks:
+  df-network:
+    external: true

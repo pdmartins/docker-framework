@@ -12,7 +12,12 @@ resolve_infra_deps() {
     return 1
   fi
 
-  yq '.dependencies.infra[]' "${df_yml}" 2>/dev/null || true
+  local result
+  if ! result="$(yq '.dependencies.infra // [] | .[]' "${df_yml}" 2>&1)"; then
+    log_error "Failed to parse dependencies.infra from ${df_yml}: ${result}"
+    return 1
+  fi
+  echo "${result}"
 }
 
 # Resolves platform dependencies from df.yml.
@@ -26,7 +31,12 @@ resolve_platform_deps() {
     return 1
   fi
 
-  yq '.dependencies.platform[]' "${df_yml}" 2>/dev/null || true
+  local result
+  if ! result="$(yq '.dependencies.platform // [] | .[]' "${df_yml}" 2>&1)"; then
+    log_error "Failed to parse dependencies.platform from ${df_yml}: ${result}"
+    return 1
+  fi
+  echo "${result}"
 }
 
 # Resolves service dependencies from df.yml.
@@ -40,7 +50,12 @@ resolve_service_deps() {
     return 1
   fi
 
-  yq '.dependencies.services[]' "${df_yml}" 2>/dev/null || true
+  local result
+  if ! result="$(yq '.dependencies.services // [] | .[]' "${df_yml}" 2>&1)"; then
+    log_error "Failed to parse dependencies.services from ${df_yml}: ${result}"
+    return 1
+  fi
+  echo "${result}"
 }
 
 # Checks if a service has a valid template.

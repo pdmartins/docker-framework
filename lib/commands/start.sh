@@ -17,6 +17,7 @@ cmd_start() {
   local skip_init=false
   local nowait=false
   local follow=false
+  local dry_run=false
 
   local project_slug=""
 
@@ -26,11 +27,32 @@ cmd_start() {
       --no-init)       skip_init=true; shift ;;
       --nowait)        nowait=true; shift ;;
       -f|--follow)     follow=true; shift ;;
+      --dry-run)       dry_run=true; shift ;;
       -h|--help)       _start_usage; return 0 ;;
       -*)              log_error "Unknown option: ${1}"; return 1 ;;
       *)               [[ -z "${project_slug}" ]] && project_slug="${1}" || { log_error "Unexpected argument: ${1}"; return 1; }; shift ;;
     esac
   done
+
+  # If the argument matches a platform service, start it directly
+  if [[ -n "${project_slug}" ]] && is_valid_platform "${project_slug}"; then
+    validate_prerequisites || return 1
+    ensure_network
+    start_platform "${project_slug}"
+    return $?
+  fi
+
+  # If no argument and CWD is inside platform/, detect the service from the path
+  if [[ -z "${project_slug}" ]]; then
+    local platform_svc
+    platform_svc="$(detect_platform_cwd)"
+    if [[ -n "${platform_svc}" ]] && is_valid_platform "${platform_svc}"; then
+      validate_prerequisites || return 1
+      ensure_network
+      start_platform "${platform_svc}"
+      return $?
+    fi
+  fi
 
   local DF_PROJECT_DIR
   if [[ -n "${project_slug}" ]]; then
@@ -54,8 +76,14 @@ cmd_start() {
   # Validate dependencies exist
   validate_deps "${df_yml}" || return 1
 
-  # Export nowait flag so infra.sh can skip healthcheck when requested
+  # Export flags so infra.sh can use them
   export DF_NOWAIT="${nowait}"
+  export DF_DRY_RUN="${dry_run}"
+
+  if [[ "${dry_run}" == true ]]; then
+    log_warn "DRY-RUN mode: no Docker commands will be executed"
+    echo ""
+  fi
 
   # Start platform + infra dependencies
   start_all_deps "${df_yml}" || return 1
@@ -84,7 +112,9 @@ cmd_start() {
       local svc_dir="${app_dir}/${svc}"
 
       if [[ -d "${svc_dir}" ]] && [[ -f "${svc_dir}/docker-compose.yml" ]]; then
-        if [[ "${follow}" == true ]]; then
+        if [[ "${dry_run}" == true ]]; then
+          log_step "[DRY-RUN] Would start service: ${svc} (${svc_dir}/docker-compose.yml)"
+        elif [[ "${follow}" == true ]]; then
           # Start detached first so deps are up, then we'll follow
           log_step "Starting service: ${svc}..."
           docker compose -f "${svc_dir}/docker-compose.yml" \
@@ -136,6 +166,7 @@ Options:
   --no-init       Skip running init scripts
   --nowait        Start in background without waiting for healthcheck
   -f, --follow    Stay attached and stream logs after starting
+  --dry-run       Simulate start without executing any Docker commands
   -h, --help      Show this help message
 
 This command must be run from a project directory containing a df.yml file.

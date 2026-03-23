@@ -9,6 +9,7 @@
 cmd_stop() {
   local remove_volumes=false
   local stop_all=false
+  local dry_run=false
 
   local project_slug=""
 
@@ -16,11 +17,34 @@ cmd_stop() {
     case "${1}" in
       -v|--remove-volumes)  remove_volumes=true; shift ;;
       --all)                stop_all=true; shift ;;
+      --dry-run)            dry_run=true; shift ;;
       -h|--help)            _stop_usage; return 0 ;;
       -*)                   log_error "Unknown option: ${1}"; return 1 ;;
       *)                    [[ -z "${project_slug}" ]] && project_slug="${1}" || { log_error "Unexpected argument: ${1}"; return 1; }; shift ;;
     esac
   done
+
+  export DF_DRY_RUN="${dry_run}"
+  if [[ "${dry_run}" == true ]]; then
+    log_warn "DRY-RUN mode: no Docker commands will be executed"
+    echo ""
+  fi
+
+  # If the argument matches a platform service, stop it directly
+  if [[ -n "${project_slug}" ]] && is_valid_platform "${project_slug}"; then
+    stop_platform "${project_slug}"
+    return $?
+  fi
+
+  # If no argument and CWD is inside platform/, detect the service from the path
+  if [[ -z "${project_slug}" ]]; then
+    local platform_svc
+    platform_svc="$(detect_platform_cwd)"
+    if [[ -n "${platform_svc}" ]] && is_valid_platform "${platform_svc}"; then
+      stop_platform "${platform_svc}"
+      return $?
+    fi
+  fi
 
   local DF_PROJECT_DIR
   if [[ -n "${project_slug}" ]]; then
@@ -73,12 +97,16 @@ cmd_stop() {
     local svc_dir="${app_dir}/${svc}"
 
     if [[ -f "${svc_dir}/docker-compose.yml" ]]; then
-      log_info "Stopping service: ${svc}..."
-      local down_args=()
-      [[ "${remove_volumes}" == true ]] && down_args+=("-v")
-      docker compose -f "${svc_dir}/docker-compose.yml" \
-        --project-name "${PROJECT_SLUG}" down "${down_args[@]}" 2>&1
-      log_success "${svc} stopped"
+      if [[ "${dry_run}" == true ]]; then
+        log_step "[DRY-RUN] Would stop service: ${svc} (${svc_dir}/docker-compose.yml)"
+      else
+        log_info "Stopping service: ${svc}..."
+        local down_args=()
+        [[ "${remove_volumes}" == true ]] && down_args+=("-v")
+        docker compose -f "${svc_dir}/docker-compose.yml" \
+          --project-name "${PROJECT_SLUG}" down "${down_args[@]}" 2>&1
+        log_success "${svc} stopped"
+      fi
     fi
   done <<< "${service_deps}"
 
@@ -103,6 +131,7 @@ Arguments:
 Options:
   -v, --remove-volumes   Also remove Docker volumes when stopping
   --all                  Stop ALL managed containers (platform + infra + projects)
+  --dry-run              Simulate stop without executing any Docker commands
   -h, --help             Show this help message
 EOF
 }

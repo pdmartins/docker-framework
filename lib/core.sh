@@ -135,6 +135,17 @@ validate_project_context() {
   return 0
 }
 
+# Detects if the current working directory is inside a platform service directory.
+# Returns: platform service name (stdout) if detected, empty otherwise
+# Example: /opt/df/platform/sonarqube -> "sonarqube"
+detect_platform_cwd() {
+  local rel="${PWD#${PLATFORM_DIR}/}"
+  if [[ "${PWD}" != "${rel}" ]]; then
+    # We are under PLATFORM_DIR; take the first path segment
+    echo "${rel%%/*}"
+  fi
+}
+
 # Finds the df.yml in the project directory (DF_PROJECT_DIR or cwd).
 # Returns: absolute path to df.yml (stdout)
 find_df_yml() {
