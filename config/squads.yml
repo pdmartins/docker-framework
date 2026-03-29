@@ -11,6 +11,8 @@ squads:
     projects:
       - index: 1
         slug: obsidian
+      - index: 2
+        slug: mcp-memory
   - index: 3
     slug: av
     projects:

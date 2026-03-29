@@ -207,6 +207,9 @@ resolve_project_metadata() {
   else
     PROJECT_DATA_PATH="${PROJECT_DIR}/data"
   fi
+
+  # Export all project metadata so docker compose (child process) can use them
+  export PROJECT_SLUG SQUAD_SLUG SQUAD_INDEX PROJECT_INDEX PROJECT_DATA_PATH PROJECT_DIR
 }
 
 # --- Validation ---
