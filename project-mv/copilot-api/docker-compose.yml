@@ -33,7 +33,7 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ./volumes/data
+      device: /repos/_pm/docker-framework/project-mv/copilot-api/volumes/data
 
 networks:
   df-network:
