@@ -1,0 +1,49 @@
+services:
+  claw-empire:
+    build:
+      context: /repos/_mv/GreenSheep01201--claw-empire
+      dockerfile: Dockerfile
+      args:
+        APP_UID: 10001
+        APP_GID: 10001
+    image: platform-claw-empire:local
+    container_name: platform-claw-empire
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      HOST: 0.0.0.0
+      DB_PATH: /app/data/claw-empire.sqlite
+      LOGS_DIR: /app/data/logs
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - platform-claw-empire-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: claw-empire
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8790/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  platform-claw-empire-data:
+    name: platform-claw-empire-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/data
+
+networks:
+  df-network:
+    name: df-network
+    external: true
