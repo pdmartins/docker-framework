@@ -1,0 +1,36 @@
+services:
+  obsidian-couchdb:
+    image: couchdb:3
+    container_name: platform-obsidian-couchdb
+    ports:
+      - "127.0.0.1:21984:5984"
+    environment:
+      COUCHDB_USER: ${COUCHDB_USER}
+      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
+      COUCHDB_SECRET: ${COUCHDB_SECRET}
+      COUCHDB_BIND_ADDRESS: "0.0.0.0"
+      COUCHDB_ENABLE_CORS: "true"
+      COUCHDB_CORS_ORIGINS: "*"
+      COUCHDB_CORS_CREDENTIALS: "true"
+      COUCHDB_CORS_METHODS: "GET,PUT,POST,HEAD,DELETE"
+      COUCHDB_CORS_HEADERS: "accept,authorization,content-type,origin,referer"
+    volumes:
+      - ./volumes/couchdb:/opt/couchdb/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: couchdb
+      df.project: obsidian
+    healthcheck:
+      test: curl -sf http://localhost:5984/_up
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  df-network:
+    name: df-network
+    external: true
