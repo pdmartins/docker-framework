@@ -11,11 +11,16 @@ set -eo pipefail
 REPO_ROOT="$1"; shift
 BACKUP_DIR="${REPO_ROOT}/.backup-volumes"
 LOG_FILE="${BACKUP_DIR}/backup.log"
+LOCK_FILE="${BACKUP_DIR}/backup.lock"
 
 mkdir -p "$BACKUP_DIR"
 
+# Cria lock para evitar execução dupla
+echo $$ > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
+
 log() {
-  echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"
+  echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"
 }
 
 log "========================================"
@@ -30,8 +35,8 @@ for parent_rel in "$@"; do
   parent_abs="${REPO_ROOT}/${parent_rel}"
 
   # Pula volumes vazios ou inexistentes
-  if [[ -z "$(ls -A "$volumes_dir" 2>/dev/null)" ]]; then
-    log "Ignorando volume vazio: ${parent_rel}/volumes"
+  if [[ ! -d "$volumes_dir" ]] || [[ -z "$(ls -A "$volumes_dir" 2>/dev/null)" ]]; then
+    log "Ignorando volume vazio ou inexistente: ${parent_rel}/volumes"
     continue
   fi
 

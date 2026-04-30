@@ -6,10 +6,18 @@
 # Acompanhe o progresso em: .backup-volumes/backup.log
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
+BACKUP_DIR="${REPO_ROOT}/.backup-volumes"
+LOG_FILE="${BACKUP_DIR}/backup.log"
+LOCK_FILE="${BACKUP_DIR}/backup.lock"
 
 # Evita loop: sai se o último commit já é um backup automático
 last_msg=$(git log -1 --pretty=%s)
 if [[ "$last_msg" == chore:\ backup\ volumes\ -\ * ]]; then
+  exit 0
+fi
+
+# Evita execução dupla (VSCode + git podem disparar o hook duas vezes)
+if [[ -f "$LOCK_FILE" ]]; then
   exit 0
 fi
 
@@ -26,19 +34,28 @@ while IFS= read -r changed_file; do
 done < <(git diff-tree --no-commit-id -r --name-only HEAD)
 
 # Remove duplicatas
-mapfile -t DIRS_TO_BACKUP < <(printf '%s\n' "${DIRS_TO_BACKUP[@]}" | sort -u)
+mapfile -t DIRS_TO_BACKUP < <(printf '%s\n' "${DIRS_TO_BACKUP[@]+"${DIRS_TO_BACKUP[@]}"}" | sort -u)
 
 if [[ ${#DIRS_TO_BACKUP[@]} -eq 0 ]]; then
   exit 0
 fi
 
-# Dispara o backup em background e devolve o terminal imediatamente
-echo "[backup] Iniciando backup em background para: ${DIRS_TO_BACKUP[*]}"
-echo "[backup] Acompanhe: tail -f ${REPO_ROOT}/.backup-volumes/backup.log"
+mkdir -p "$BACKUP_DIR"
 
-nohup bash "${REPO_ROOT}/hooks/backup-volumes.sh" \
+echo "[backup] Iniciando backup em background para: ${DIRS_TO_BACKUP[*]}"
+echo "[backup] Acompanhe: tail -f ${BACKUP_DIR}/backup.log"
+
+# Exporta variáveis necessárias para o git funcionar sem terminal
+export GIT_AUTHOR_NAME=$(git log -1 --pretty="%an")
+export GIT_AUTHOR_EMAIL=$(git log -1 --pretty="%ae")
+export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+# Dispara em background completamente desacoplado do terminal
+setsid bash "${REPO_ROOT}/hooks/backup-volumes.sh" \
   "$REPO_ROOT" \
   "${DIRS_TO_BACKUP[@]}" \
-  >> "${REPO_ROOT}/.backup-volumes/backup.log" 2>&1 &
+  > "$LOG_FILE" 2>&1 &
 
+disown $!
 exit 0
