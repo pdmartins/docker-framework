@@ -1,0 +1,39 @@
+services:
+  tokengate:
+    build: /repos/_pm/tokengate
+    image: tokengate/tokengate:latest
+    container_name: platform-tokengate
+    ports:
+      - "4200:3000"
+    environment:
+      DATABASE_TYPE: sqlite
+      DATABASE_PATH: /app/data/tokengate.db
+    volumes:
+      - platform-tokengate-data:/app/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: tokengate
+    healthcheck:
+      test: wget -qO- http://localhost:3000/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  platform-tokengate-data:
+    name: platform-tokengate-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/data
+
+networks:
+  df-network:
+    name: df-network
+    external: true
