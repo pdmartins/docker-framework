@@ -25,13 +25,4 @@ docker-compose.override.yml
 tmp/
 temp/
 
-# Copilot Agent Skills
-.copilot-core/
-.copilot-project/
-project-*/
-!project-mv/
-platform/copilot-api/volumes/data/github_token
-project-mv/copilot-api/volumes/data/github_token
-platform/sonarqube/volumes/*
-project-mv/copilot-api/volumes/*
-platform/paperclip/volumes/*
+**/volumes/*
