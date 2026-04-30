@@ -8,7 +8,7 @@
 # Não roda se o commit atual já for um backup (evita loop infinito).
 # Log em tempo real: .backup-volumes/backup.log
 
-set -uo pipefail
+set -eo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 BACKUP_DIR="${REPO_ROOT}/.backup-volumes"
@@ -40,13 +40,13 @@ while IFS= read -r changed_file; do
   done
 done < <(git diff-tree --no-commit-id -r --name-only HEAD)
 
-if [[ ${#DIRS_TO_BACKUP[@]:-0} -eq 0 ]]; then
+if [[ ${#DIRS_TO_BACKUP[@]} -eq 0 ]]; then
   exit 0
 fi
 
 log "========================================"
 log "Commit: $(git log -1 --pretty='%h %s')"
-log "Volumes a processar: ${#DIRS_TO_BACKUP[@]:-0}"
+log "Volumes a processar: ${#DIRS_TO_BACKUP[@]}"
 log "========================================"
 
 # Busca pastas "volumes/" em até 4 níveis de profundidade
