@@ -1,0 +1,104 @@
+services:
+  paperclip:
+    build:
+      context: /repos/_mv/paperclipai--paperclip
+      dockerfile: Dockerfile
+      args:
+        USER_UID: ${PAPERCLIP_UID:-1001}
+        USER_GID: ${PAPERCLIP_GID:-1001}
+    image: platform-paperclip:local
+    container_name: platform-paperclip
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      DATABASE_URL: postgres://paperclip:paperclip@platform-paperclip-db:5432/paperclip
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}
+      PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-https://paperclip.bewiser.com.br}
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_HOME: /paperclip
+      HOST: 0.0.0.0
+      PORT: "3100"
+      SERVE_UI: "true"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-paperclip@orthanc}
+      ANTHROPIC_BASE_URL: http://platform-copilot-api:4141
+    group_add:
+      - "1005"
+    volumes:
+      - platform-paperclip-data:/paperclip
+      - /repos:/repos:rw
+      - /home/saruman/.claude:/home/node/.claude:rw
+      - /home/saruman/.claude.json:/home/node/.claude.json:rw
+      # Claude Code CLI
+      - /opt/docker-framework/platform/paperclip/scripts/claude:/usr/local/bin/claude:ro
+      - /home/saruman/.npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe:/usr/local/bin/claude-code-bin:ro
+      # Ferramentas de desenvolvimento (host → container, read-only)
+      - /usr/lib/dotnet:/usr/lib/dotnet:ro
+      - /usr/bin/dotnet:/usr/bin/dotnet:ro
+      - /usr/bin/node:/usr/bin/node:ro
+      - /usr/bin/npm:/usr/bin/npm:ro
+      - /usr/bin/npx:/usr/bin/npx:ro
+      - /usr/bin/pnpm:/usr/bin/pnpm:ro
+      - /usr/bin/git:/usr/bin/git:ro
+      - /usr/bin/python3:/usr/bin/python3:ro
+      - /usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:ro
+      - /lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:ro
+    networks:
+      - df-network
+    depends_on:
+      paperclip-db:
+        condition: service_healthy
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: paperclip
+    healthcheck:
+      test: wget -qO- http://localhost:3100/api/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+  paperclip-db:
+    image: postgres:17-alpine
+    container_name: platform-paperclip-db
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: paperclip
+      POSTGRES_DB: paperclip
+    volumes:
+      - platform-paperclip-postgresql:/var/lib/postgresql/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: paperclip-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  platform-paperclip-data:
+    name: platform-paperclip-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/data
+  platform-paperclip-postgresql:
+    name: platform-paperclip-postgresql
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/postgresql
+
+networks:
+  df-network:
+    name: df-network
+    external: true

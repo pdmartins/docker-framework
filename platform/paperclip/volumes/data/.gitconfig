@@ -1,0 +1,12 @@
+[safe]
+	directory = /repos/_hv/STT
+	directory = /repos/_hv/STT
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Consumer
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Api
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Consumer
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Api
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Consumer
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Api
+	directory = /repos/_hv/STT/.git/modules/VoiceTranscription.Ai.Api
+	directory = /repos/_hv/STT/VoiceTranscription.AI.Web
+	directory = /repos/_hv/STT
