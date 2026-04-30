@@ -1,0 +1,9 @@
+project:
+  name: hv_stt
+  squad: av
+
+dependencies:
+  services:
+    - api
+    - web
+    - consumer

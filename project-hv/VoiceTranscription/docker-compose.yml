@@ -1,0 +1,80 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: hv_stt-redis
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: project
+      df.project: hv_stt
+    healthcheck:
+      test: redis-cli ping | grep PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: /repos/_hv/STT/VoiceTranscription.AI.Api/src
+      dockerfile: Dockerfile
+    container_name: hv_stt-api
+    ports:
+      - "${HOST_PORT_API:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Core__Cache__ConnectionString: "hv_stt-redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: project
+      df.project: hv_stt
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: /repos/_hv/STT/VoiceTranscription.AI.Consumer/src
+      dockerfile: Dockerfile
+    container_name: hv_stt-consumer
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Core__Cache__ConnectionString: "hv_stt-redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: project
+      df.project: hv_stt
+    restart: unless-stopped
+
+  web:
+    build:
+      context: /repos/_hv/STT/VoiceTranscription.AI.Web
+      dockerfile: Dockerfile
+    container_name: hv_stt-web
+    ports:
+      - "${HOST_PORT_WEB:-5173}:5173"
+    volumes:
+      - /repos/_hv/STT/VoiceTranscription.AI.Web/src:/app/src
+      - /repos/_hv/STT/VoiceTranscription.AI.Web/index.html:/app/index.html
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: project
+      df.project: hv_stt
+    restart: unless-stopped
+
+networks:
+  df-network:
+    name: df-network
+    external: true
