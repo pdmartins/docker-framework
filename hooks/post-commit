@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# hooks/post-commit
+#
+# Após cada commit, gera zips compactados (máxima compressão, partes de 5MB)
+# das pastas volumes/ encontradas no repositório e cria um commit separado
+# por volume em .backup-volumes/{nome}/
+#
+# Não roda se o commit atual já for um backup (evita loop infinito).
+
+set -uo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+BACKUP_DIR="${REPO_ROOT}/.backup-volumes"
+
+# Evita loop: sai se o último commit já é um backup automático
+last_msg=$(git log -1 --pretty=%s)
+if [[ "$last_msg" == chore:\ backup\ volumes\ -\ * ]]; then
+  exit 0
+fi
+
+# Busca pastas "volumes/" em até 4 níveis de profundidade
+while IFS= read -r -d '' volumes_dir; do
+  # Pula volumes vazios
+  if [[ -z "$(ls -A "$volumes_dir" 2>/dev/null)" ]]; then
+    echo "[post-commit] Ignorando volume vazio: $volumes_dir"
+    continue
+  fi
+
+  rel_volumes=$(realpath --relative-to="$REPO_ROOT" "$volumes_dir")  # ex: platform/sonarqube/volumes
+  parent_rel=$(dirname "$rel_volumes")                                 # ex: platform/sonarqube
+  parent_abs=$(dirname "$volumes_dir")
+
+  # Nome base do zip e pasta de destino dentro de .backup-volumes/
+  base_name="${parent_rel//\//-}-volumes"       # ex: platform-sonarqube-volumes
+  dest_dir="${BACKUP_DIR}/${base_name}"
+  zip_file="${dest_dir}/${base_name}.zip"
+
+  echo "[post-commit] Processando: $rel_volumes → .backup-volumes/${base_name}/"
+
+  # Limpa partes antigas para evitar arquivos obsoletos (.z01, .z02, etc.)
+  rm -rf "$dest_dir"
+  mkdir -p "$dest_dir"
+
+  # Cria zip com máxima compressão (-9) e split de 5MB (-s 5m)
+  # cd no dest_dir é necessário: zip cria os arquivos .z01/.z02 no diretório corrente
+  # Exit code 18 = arquivos sem permissão (esperado em volumes Docker) — trata como aviso
+  zip_output=$(cd "$dest_dir" && zip -qr -9 -s 5m "${base_name}.zip" "${parent_abs}/volumes/" 2>&1)
+  zip_exit=$?
+
+  if [[ $zip_exit -eq 0 ]]; then
+    echo "[post-commit] OK: .backup-volumes/${base_name}/"
+  elif [[ $zip_exit -eq 18 ]]; then
+    echo "[post-commit] AVISO: alguns arquivos sem permissão foram ignorados em $rel_volumes"
+  else
+    echo "[post-commit] ERRO ao criar zip de $rel_volumes (exit $zip_exit):"
+    echo "$zip_output"
+    continue
+  fi
+
+  # Adiciona apenas esta pasta de backup e cria um commit dedicado
+  git add "${dest_dir}"
+  git commit -m "chore: backup volumes - ${parent_rel}"
+  echo "[post-commit] Commit criado: backup volumes - ${parent_rel}"
+
+done < <(find "$REPO_ROOT" -maxdepth 4 -type d -name "volumes" \
+         -not -path "*/.git/*" \
+         -not -path "*/.backup-volumes/*" \
+         -print0)
