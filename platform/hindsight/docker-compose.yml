@@ -1,0 +1,73 @@
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:${HINDSIGHT_VERSION:-latest}
+    container_name: platform-hindsight
+    ports:
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:9999:9999"
+    environment:
+      # LLM — usando copilot-api local (proxy Anthropic)
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER:-anthropic}
+      HINDSIGHT_API_LLM_API_KEY: ${ANTHROPIC_API_KEY:-hindsight@orthanc}
+      HINDSIGHT_API_LLM_BASE_URL: http://platform-copilot-api:4141
+
+      # Database
+      HINDSIGHT_API_DATABASE_URL: postgresql://${HINDSIGHT_DB_USER:-hindsight_user}:${HINDSIGHT_DB_PASSWORD:?HINDSIGHT_DB_PASSWORD must be set}@platform-hindsight-db:5432/${HINDSIGHT_DB_NAME:-hindsight_db}
+
+      # Extensões de busca (native = sem extensão extra, funciona com postgres padrão)
+      HINDSIGHT_API_VECTOR_EXTENSION: pgvector
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION: native
+    depends_on:
+      hindsight-db:
+        condition: service_healthy
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: hindsight
+    healthcheck:
+      test: wget -qO- http://localhost:8888/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  hindsight-db:
+    image: pgvector/pgvector:pg17
+    container_name: platform-hindsight-db
+    environment:
+      POSTGRES_USER: ${HINDSIGHT_DB_USER:-hindsight_user}
+      POSTGRES_PASSWORD: ${HINDSIGHT_DB_PASSWORD:?HINDSIGHT_DB_PASSWORD must be set}
+      POSTGRES_DB: ${HINDSIGHT_DB_NAME:-hindsight_db}
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5 --auth-local=md5"
+    volumes:
+      - platform-hindsight-postgresql:/var/lib/postgresql/data
+    networks:
+      - df-network
+    labels:
+      managed-by: docker-framework
+      df.type: platform
+      df.resource: hindsight-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HINDSIGHT_DB_USER:-hindsight_user} -d ${HINDSIGHT_DB_NAME:-hindsight_db}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  platform-hindsight-postgresql:
+    name: platform-hindsight-postgresql
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/postgresql
+
+networks:
+  df-network:
+    name: df-network
+    external: true
